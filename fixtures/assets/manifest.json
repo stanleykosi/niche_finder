@@ -1,0 +1,9 @@
+{
+  "source": "fixture://asset-manifest",
+  "rights_metadata": true,
+  "entries": [
+    {"query": "everyday visual tests", "video_count": 3, "image_count": 4},
+    {"query": "proof-first explainers", "video_count": 2, "image_count": 3}
+  ]
+}
+

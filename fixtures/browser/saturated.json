@@ -1,0 +1,13 @@
+{
+  "search": [
+    {"video_id":"v-sat-1","url":"https://www.youtube.com/watch?v=v-sat-1","title":"Rank the impossible object test 1","channel_id":"ch-sat-1","channel_title":"Copycat One","visible_views_text":"60K views","visible_age_text":"5 days ago","presented_as_short":true},
+    {"video_id":"v-sat-2","url":"https://www.youtube.com/watch?v=v-sat-2","title":"Rank the impossible object test 2","channel_id":"ch-sat-2","channel_title":"Copycat Two","visible_views_text":"55K views","visible_age_text":"6 days ago","presented_as_short":true},
+    {"video_id":"v-sat-3","url":"https://www.youtube.com/watch?v=v-sat-3","title":"Rank the impossible object test 3","channel_id":"ch-sat-3","channel_title":"Copycat Three","visible_views_text":"44K views","visible_age_text":"7 days ago","presented_as_short":true},
+    {"video_id":"v-sat-4","url":"https://www.youtube.com/watch?v=v-sat-4","title":"Rank the impossible object test 4","channel_id":"ch-sat-4","channel_title":"Copycat Four","visible_views_text":"40K views","visible_age_text":"8 days ago","presented_as_short":true},
+    {"video_id":"v-sat-5","url":"https://www.youtube.com/watch?v=v-sat-5","title":"Rank the impossible object test 5","channel_id":"ch-sat-5","channel_title":"Copycat Five","visible_views_text":"35K views","visible_age_text":"9 days ago","presented_as_short":true},
+    {"video_id":"v-sat-6","url":"https://www.youtube.com/watch?v=v-sat-6","title":"Rank the impossible object test 6","channel_id":"ch-sat-6","channel_title":"Copycat Six","visible_views_text":"30K views","visible_age_text":"10 days ago","presented_as_short":true}
+  ],
+  "channels": {},
+  "videos": {}
+}
+

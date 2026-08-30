@@ -1,0 +1,6 @@
+{
+  "provider": "fake",
+  "version": "fixture-ai-v1",
+  "notes": "The closed suite uses the deterministic provider in apps/api/app/ai/fake.py."
+}
+

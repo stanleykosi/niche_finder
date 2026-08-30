@@ -1,0 +1,108 @@
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_DB: nicheintel
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports: ["5432:5432"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d nicheintel"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    networks: [closed]
+
+  redis:
+    image: redis:7-alpine
+    ports: ["6379:6379"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 2s
+      retries: 20
+    networks: [closed]
+
+  fixture-server:
+    build:
+      context: .
+      dockerfile: Dockerfile.fixture
+    command: ["python", "fixtures/browser/server.py"]
+    ports: ["8765:8765"]
+    environment:
+      FIXTURE_SCENARIO: strong
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8765/health', timeout=2)"]
+      interval: 2s
+      timeout: 3s
+      retries: 20
+    networks: [closed]
+
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    command: ["sh", "-c", "python -m apps.api.app.db.migrate && uvicorn apps.api.app.main:app --host 0.0.0.0 --port 8000"]
+    env_file: [.env.example]
+    environment:
+      APP_MODE: closed_test
+      AI_PROVIDER: fake
+      CLOSED_TEST_BLOCK_NETWORK: "true"
+      DATABASE_URL: postgresql+psycopg://postgres:postgres@postgres:5432/nicheintel
+    depends_on:
+      postgres: {condition: service_healthy}
+      redis: {condition: service_healthy}
+      fixture-server: {condition: service_healthy}
+    ports: ["8000:8000"]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=2)"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+    networks: [closed]
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    command: ["arq", "workers.research.worker.WorkerSettings"]
+    env_file: [.env.example]
+    environment:
+      APP_MODE: closed_test
+      AI_PROVIDER: fake
+      CLOSED_TEST_BLOCK_NETWORK: "true"
+      DATABASE_URL: postgresql+psycopg://postgres:postgres@postgres:5432/nicheintel
+      REDIS_URL: redis://redis:6379/0
+    depends_on:
+      backend: {condition: service_healthy}
+      redis: {condition: service_healthy}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import redis; assert redis.from_url('redis://redis:6379/0').ping()"]
+      interval: 2s
+      timeout: 3s
+      retries: 20
+    networks: [closed]
+
+  frontend:
+    build:
+      context: apps/web
+      dockerfile: Dockerfile
+    environment:
+      NEXT_PUBLIC_API_BASE_URL: http://localhost:8000
+    depends_on: [backend]
+    ports: ["3000:3000"]
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "-", "http://127.0.0.1:3000"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+    networks: [closed]
+
+  ollama:
+    image: ollama/ollama:latest
+    profiles: ["ollama"]
+    ports: ["11434:11434"]
+
+networks:
+  closed:
+    internal: true

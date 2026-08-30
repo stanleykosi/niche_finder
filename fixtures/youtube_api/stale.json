@@ -1,0 +1,15 @@
+{
+  "fixture_anchor_date": "2026-08-12",
+  "search": [
+    {"video_id":"v-stale-1","url":"https://www.youtube.com/watch?v=v-stale-1","title":"Old mystery reveal that went viral","channel_id":"ch-stale-a","channel_title":"Archive Mysteries","visible_views_text":"2.4M views","visible_age_text":"2 years ago","presented_as_short":false},
+    {"video_id":"v-stale-2","url":"https://www.youtube.com/watch?v=v-stale-2","title":"Another old mystery reveal","channel_id":"ch-stale-a","channel_title":"Archive Mysteries","visible_views_text":"1.8M views","visible_age_text":"18 months ago","presented_as_short":false},
+    {"video_id":"v-stale-3","url":"https://www.youtube.com/watch?v=v-stale-3","title":"Recent mystery attempt","channel_id":"ch-stale-a","channel_title":"Archive Mysteries","visible_views_text":"12K views","visible_age_text":"18 days ago","presented_as_short":false}
+  ],
+  "channels": [{"id":"ch-stale-a","url":"https://www.youtube.com/channel/ch-stale-a","title":"Archive Mysteries","description":"Historical archive explainers.","subscriber_count":90000,"total_view_count":9000000,"video_count":210,"uploads":["v-stale-1","v-stale-2","v-stale-3"]}],
+  "videos": [
+    {"id":"v-stale-1","channel_id":"ch-stale-a","url":"https://www.youtube.com/watch?v=v-stale-1","title":"Old mystery reveal that went viral","description":"Historical success.","duration_seconds":600,"published_at":"2024-08-08T12:00:00+00:00","category_id":"27","tags":["mystery"],"thumbnails":{},"view_count":2400000,"like_count":90000,"comment_count":5000,"is_short":false,"format_label":"mystery evidence reveal","topic":"historical mystery"},
+    {"id":"v-stale-2","channel_id":"ch-stale-a","url":"https://www.youtube.com/watch?v=v-stale-2","title":"Another old mystery reveal","description":"Historical success.","duration_seconds":540,"published_at":"2025-02-08T12:00:00+00:00","category_id":"27","tags":["mystery"],"thumbnails":{},"view_count":1800000,"like_count":60000,"comment_count":3000,"is_short":false,"format_label":"mystery evidence reveal","topic":"historical mystery"},
+    {"id":"v-stale-3","channel_id":"ch-stale-a","url":"https://www.youtube.com/watch?v=v-stale-3","title":"Recent mystery attempt","description":"Recent low-signal upload.","duration_seconds":500,"published_at":"2026-07-21T12:00:00+00:00","category_id":"27","tags":["mystery"],"thumbnails":{},"view_count":12000,"like_count":300,"comment_count":15,"is_short":false,"format_label":"mystery evidence reveal","topic":"historical mystery"}
+  ],
+  "comments": {}
+}

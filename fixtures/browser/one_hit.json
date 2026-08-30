@@ -1,0 +1,10 @@
+{
+  "search": [
+    {"video_id":"v-one-hit","url":"https://www.youtube.com/watch?v=v-one-hit","title":"The impossible one-time trick","channel_id":"ch-one-hit","channel_title":"One Hit Lab","visible_views_text":"900K views","visible_age_text":"26 days ago","presented_as_short":true,"screenshot_ref":"fixture://screenshots/one-hit.png"},
+    {"video_id":"v-one-normal-1","url":"https://www.youtube.com/watch?v=v-one-normal-1","title":"A normal attempt","channel_id":"ch-one-hit","channel_title":"One Hit Lab","visible_views_text":"18K views","visible_age_text":"22 days ago","presented_as_short":true,"screenshot_ref":"fixture://screenshots/one-normal.png"},
+    {"video_id":"v-one-normal-2","url":"https://www.youtube.com/watch?v=v-one-normal-2","title":"Another normal attempt","channel_id":"ch-one-hit","channel_title":"One Hit Lab","visible_views_text":"16K views","visible_age_text":"18 days ago","presented_as_short":true,"screenshot_ref":"fixture://screenshots/one-normal-2.png"}
+  ],
+  "channels": {"ch-one-hit":{"channel_id":"ch-one-hit","videos":["v-one-hit","v-one-normal-1","v-one-normal-2"]}},
+  "videos": {"v-one-hit":{"is_short_presentation":true,"visible_transcript":"A one-time trick.","thumbnail_ref":"fixture://thumbs/one-hit.jpg","frame_refs":["fixture://frames/one-hit.jpg"],"opening_visual_summary":"A single surprising result.","caption_style":"large captions","observable_structure":["surprise","payoff"],"confidence":0.8},"v-one-normal-1":{"is_short_presentation":true,"visible_transcript":null,"thumbnail_ref":"fixture://thumbs/one-normal.jpg","frame_refs":[],"opening_visual_summary":"A normal result.","caption_style":"plain","observable_structure":["test"],"confidence":0.7},"v-one-normal-2":{"is_short_presentation":true,"visible_transcript":null,"thumbnail_ref":"fixture://thumbs/one-normal-2.jpg","frame_refs":[],"opening_visual_summary":"A normal result.","caption_style":"plain","observable_structure":["test"],"confidence":0.7}}
+}
+

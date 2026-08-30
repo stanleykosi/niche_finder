@@ -1,0 +1,15 @@
+{
+  "fixture_anchor_date": "2026-08-12",
+  "search": [
+    {"video_id":"v-one-hit","url":"https://www.youtube.com/watch?v=v-one-hit","title":"The impossible one-time trick","channel_id":"ch-one-hit","channel_title":"One Hit Lab","visible_views_text":"900K views","visible_age_text":"26 days ago","presented_as_short":true},
+    {"video_id":"v-one-normal-1","url":"https://www.youtube.com/watch?v=v-one-normal-1","title":"A normal attempt","channel_id":"ch-one-hit","channel_title":"One Hit Lab","visible_views_text":"18K views","visible_age_text":"22 days ago","presented_as_short":true},
+    {"video_id":"v-one-normal-2","url":"https://www.youtube.com/watch?v=v-one-normal-2","title":"Another normal attempt","channel_id":"ch-one-hit","channel_title":"One Hit Lab","visible_views_text":"16K views","visible_age_text":"18 days ago","presented_as_short":true}
+  ],
+  "channels": [{"id":"ch-one-hit","url":"https://www.youtube.com/channel/ch-one-hit","title":"One Hit Lab","description":"One unusual upload.","subscriber_count":12000,"total_view_count":1200000,"video_count":80,"uploads":["v-one-hit","v-one-normal-1","v-one-normal-2"]}],
+  "videos": [
+    {"id":"v-one-hit","channel_id":"ch-one-hit","url":"https://www.youtube.com/watch?v=v-one-hit","title":"The impossible one-time trick","description":"An isolated viral moment.","duration_seconds":35,"published_at":"2026-07-13T12:00:00+00:00","category_id":"24","tags":["trick"],"thumbnails":{},"view_count":900000,"like_count":40000,"comment_count":1200,"is_short":true,"format_label":"failed attempts proof explanation","topic":"one-time trick"},
+    {"id":"v-one-normal-1","channel_id":"ch-one-hit","url":"https://www.youtube.com/watch?v=v-one-normal-1","title":"A normal attempt","description":"Control upload.","duration_seconds":40,"published_at":"2026-07-17T12:00:00+00:00","category_id":"24","tags":[],"thumbnails":{},"view_count":18000,"like_count":600,"comment_count":20,"is_short":true,"format_label":"failed attempts proof explanation","topic":"one-time trick"},
+    {"id":"v-one-normal-2","channel_id":"ch-one-hit","url":"https://www.youtube.com/watch?v=v-one-normal-2","title":"Another normal attempt","description":"Control upload.","duration_seconds":40,"published_at":"2026-07-21T12:00:00+00:00","category_id":"24","tags":[],"thumbnails":{},"view_count":16000,"like_count":500,"comment_count":18,"is_short":true,"format_label":"failed attempts proof explanation","topic":"one-time trick"}
+  ],
+  "comments": {}
+}

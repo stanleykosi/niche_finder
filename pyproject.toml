@@ -1,0 +1,50 @@
+[project]
+name = "youtube-niche-intelligence"
+version = "0.1.0"
+description = "Evidence-first YouTube niche discovery and validation engine"
+requires-python = ">=3.12"
+dependencies = [
+  "fastapi>=0.115",
+  "uvicorn[standard]>=0.30",
+  "pydantic>=2.8",
+  "pydantic-settings>=2.4",
+  "sqlalchemy>=2.0",
+  "psycopg[binary]>=3.2",
+  "alembic>=1.13",
+  "httpx>=0.27",
+  "redis>=5.0",
+  "arq>=0.28",
+  "playwright>=1.45",
+  "polars>=1.0",
+  "numpy>=2.0",
+  "scikit-learn>=1.5",
+  "sentence-transformers>=3.0",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.0",
+  "pytest-asyncio>=0.23",
+  "pytest-socket>=0.7",
+  "respx>=0.21",
+]
+openrouter = [
+  "openrouter>=1.0.0",
+]
+media = [
+  "deepgram-sdk>=7.0.0",
+  "yt-dlp>=2026.1.1",
+]
+
+[tool.setuptools.packages.find]
+include = ["apps*", "workers*"]
+exclude = ["runtime*", "fixtures*", "packages*", "tests*"]
+
+[tool.pytest.ini_options]
+pythonpath = ["apps/api"]
+testpaths = ["apps/api/tests", "tests"]
+addopts = "-ra"
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"

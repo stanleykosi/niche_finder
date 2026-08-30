@@ -1,0 +1,28 @@
+{
+  "fixture_anchor_date": "2026-08-12",
+  "search": [
+    {"video_id":"v-sat-1","url":"https://www.youtube.com/watch?v=v-sat-1","title":"Rank the impossible object test 1","channel_id":"ch-sat-1","channel_title":"Copycat One","visible_views_text":"60K views","visible_age_text":"5 days ago","presented_as_short":true},
+    {"video_id":"v-sat-2","url":"https://www.youtube.com/watch?v=v-sat-2","title":"Rank the impossible object test 2","channel_id":"ch-sat-2","channel_title":"Copycat Two","visible_views_text":"55K views","visible_age_text":"6 days ago","presented_as_short":true},
+    {"video_id":"v-sat-3","url":"https://www.youtube.com/watch?v=v-sat-3","title":"Rank the impossible object test 3","channel_id":"ch-sat-3","channel_title":"Copycat Three","visible_views_text":"44K views","visible_age_text":"7 days ago","presented_as_short":true},
+    {"video_id":"v-sat-4","url":"https://www.youtube.com/watch?v=v-sat-4","title":"Rank the impossible object test 4","channel_id":"ch-sat-4","channel_title":"Copycat Four","visible_views_text":"40K views","visible_age_text":"8 days ago","presented_as_short":true},
+    {"video_id":"v-sat-5","url":"https://www.youtube.com/watch?v=v-sat-5","title":"Rank the impossible object test 5","channel_id":"ch-sat-5","channel_title":"Copycat Five","visible_views_text":"35K views","visible_age_text":"9 days ago","presented_as_short":true},
+    {"video_id":"v-sat-6","url":"https://www.youtube.com/watch?v=v-sat-6","title":"Rank the impossible object test 6","channel_id":"ch-sat-6","channel_title":"Copycat Six","visible_views_text":"30K views","visible_age_text":"10 days ago","presented_as_short":true}
+  ],
+  "channels": [
+    {"id":"ch-sat-1","url":"https://www.youtube.com/channel/ch-sat-1","title":"Copycat One","description":"","subscriber_count":10000,"total_view_count":100000,"video_count":30,"uploads":["v-sat-1"]},
+    {"id":"ch-sat-2","url":"https://www.youtube.com/channel/ch-sat-2","title":"Copycat Two","description":"","subscriber_count":11000,"total_view_count":110000,"video_count":31,"uploads":["v-sat-2"]},
+    {"id":"ch-sat-3","url":"https://www.youtube.com/channel/ch-sat-3","title":"Copycat Three","description":"","subscriber_count":12000,"total_view_count":120000,"video_count":32,"uploads":["v-sat-3"]},
+    {"id":"ch-sat-4","url":"https://www.youtube.com/channel/ch-sat-4","title":"Copycat Four","description":"","subscriber_count":13000,"total_view_count":130000,"video_count":33,"uploads":["v-sat-4"]},
+    {"id":"ch-sat-5","url":"https://www.youtube.com/channel/ch-sat-5","title":"Copycat Five","description":"","subscriber_count":14000,"total_view_count":140000,"video_count":34,"uploads":["v-sat-5"]},
+    {"id":"ch-sat-6","url":"https://www.youtube.com/channel/ch-sat-6","title":"Copycat Six","description":"","subscriber_count":15000,"total_view_count":150000,"video_count":35,"uploads":["v-sat-6"]}
+  ],
+  "videos": [
+    {"id":"v-sat-1","channel_id":"ch-sat-1","url":"https://www.youtube.com/watch?v=v-sat-1","title":"Rank the impossible object test 1","description":"","duration_seconds":39,"published_at":"2026-08-03T12:00:00+00:00","category_id":"24","tags":["rank"],"thumbnails":{},"view_count":60000,"like_count":1800,"comment_count":40,"is_short":true,"format_label":"escalation ranking","topic":"impossible object ranking"},
+    {"id":"v-sat-2","channel_id":"ch-sat-2","url":"https://www.youtube.com/watch?v=v-sat-2","title":"Rank the impossible object test 2","description":"","duration_seconds":40,"published_at":"2026-08-02T12:00:00+00:00","category_id":"24","tags":["rank"],"thumbnails":{},"view_count":55000,"like_count":1600,"comment_count":38,"is_short":true,"format_label":"escalation ranking","topic":"impossible object ranking"},
+    {"id":"v-sat-3","channel_id":"ch-sat-3","url":"https://www.youtube.com/watch?v=v-sat-3","title":"Rank the impossible object test 3","description":"","duration_seconds":41,"published_at":"2026-08-01T12:00:00+00:00","category_id":"24","tags":["rank"],"thumbnails":{},"view_count":44000,"like_count":1200,"comment_count":30,"is_short":true,"format_label":"escalation ranking","topic":"impossible object ranking"},
+    {"id":"v-sat-4","channel_id":"ch-sat-4","url":"https://www.youtube.com/watch?v=v-sat-4","title":"Rank the impossible object test 4","description":"","duration_seconds":39,"published_at":"2026-07-31T12:00:00+00:00","category_id":"24","tags":["rank"],"thumbnails":{},"view_count":40000,"like_count":1100,"comment_count":28,"is_short":true,"format_label":"escalation ranking","topic":"impossible object ranking"},
+    {"id":"v-sat-5","channel_id":"ch-sat-5","url":"https://www.youtube.com/watch?v=v-sat-5","title":"Rank the impossible object test 5","description":"","duration_seconds":40,"published_at":"2026-07-30T12:00:00+00:00","category_id":"24","tags":["rank"],"thumbnails":{},"view_count":35000,"like_count":1000,"comment_count":24,"is_short":true,"format_label":"escalation ranking","topic":"impossible object ranking"},
+    {"id":"v-sat-6","channel_id":"ch-sat-6","url":"https://www.youtube.com/watch?v=v-sat-6","title":"Rank the impossible object test 6","description":"","duration_seconds":38,"published_at":"2026-07-29T12:00:00+00:00","category_id":"24","tags":["rank"],"thumbnails":{},"view_count":30000,"like_count":900,"comment_count":20,"is_short":true,"format_label":"escalation ranking","topic":"impossible object ranking"}
+  ],
+  "comments": {}
+}

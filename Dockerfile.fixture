@@ -1,0 +1,6 @@
+FROM python:3.12-slim
+WORKDIR /app
+RUN pip install --no-cache-dir fastapi uvicorn
+COPY fixtures ./fixtures
+CMD ["python", "fixtures/browser/server.py"]
+

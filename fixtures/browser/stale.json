@@ -1,0 +1,10 @@
+{
+  "search": [
+    {"video_id":"v-stale-1","url":"https://www.youtube.com/watch?v=v-stale-1","title":"Old mystery reveal that went viral","channel_id":"ch-stale-a","channel_title":"Archive Mysteries","visible_views_text":"2.4M views","visible_age_text":"2 years ago","presented_as_short":false},
+    {"video_id":"v-stale-2","url":"https://www.youtube.com/watch?v=v-stale-2","title":"Another old mystery reveal","channel_id":"ch-stale-a","channel_title":"Archive Mysteries","visible_views_text":"1.8M views","visible_age_text":"18 months ago","presented_as_short":false},
+    {"video_id":"v-stale-3","url":"https://www.youtube.com/watch?v=v-stale-3","title":"Recent mystery attempt","channel_id":"ch-stale-a","channel_title":"Archive Mysteries","visible_views_text":"12K views","visible_age_text":"18 days ago","presented_as_short":false}
+  ],
+  "channels": {"ch-stale-a":{"channel_id":"ch-stale-a","videos":["v-stale-1","v-stale-2","v-stale-3"]}},
+  "videos": {"v-stale-1":{"is_short_presentation":false,"visible_transcript":"The archive explains an old mystery.","thumbnail_ref":"fixture://thumbs/stale-1.jpg","frame_refs":[],"opening_visual_summary":"An archival photograph.","caption_style":"documentary captions","observable_structure":["mystery","evidence","reveal"],"confidence":0.9},"v-stale-2":{"is_short_presentation":false,"visible_transcript":"Another historical reveal.","thumbnail_ref":"fixture://thumbs/stale-2.jpg","frame_refs":[],"opening_visual_summary":"A historical document.","caption_style":"documentary captions","observable_structure":["mystery","evidence","reveal"],"confidence":0.9},"v-stale-3":{"is_short_presentation":false,"visible_transcript":null,"thumbnail_ref":"fixture://thumbs/stale-3.jpg","frame_refs":[],"opening_visual_summary":"A recent archive attempt.","caption_style":"documentary captions","observable_structure":["mystery","evidence","reveal"],"confidence":0.8}}
+}
+
