@@ -611,6 +611,14 @@ does not abort analysis of later videos. Missing media executables and other
 configuration failures remain fatal rather than being mislabeled as source
 unavailability.
 
+Chromium video inspection navigates to the response-commit boundary, rejects
+optional consent without accepting personalized cookies, and then waits a
+bounded interval for a real watch/Shorts surface to hydrate. Per-operation
+locator, seek, and screenshot timeouts plus bounded context/driver shutdown
+prevent a single partially loaded YouTube page from multiplying into several
+minutes of empty observations. Successful frame samples are retained even if
+another sample is unavailable.
+
 ### Runtime media lifecycle
 
 - Scope every download and frame to `.runtime/media/<research-run-id>/`.

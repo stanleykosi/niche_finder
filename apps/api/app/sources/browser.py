@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -32,6 +33,16 @@ VIDEO_CARD_CONTAINER_XPATH = (
 YOUTUBE_CONSENT_SELECTOR = "ytd-consent-bump-v2-lightbox"
 CONSENT_DISCOVERY_TIMEOUT_MS = 750
 SEARCH_RESULT_HYDRATION_TIMEOUT_MS = 5_000
+VIDEO_PAGE_HYDRATION_SELECTOR = ", ".join((
+    "video",
+    "ytd-watch-flexy",
+    "ytd-reel-video-renderer",
+    "#shorts-container",
+))
+VIDEO_PAGE_HYDRATION_TIMEOUT_MS = 8_000
+VIDEO_PAGE_OPERATION_TIMEOUT_MS = 5_000
+VIDEO_PAGE_NAVIGATION_TIMEOUT_MS = 15_000
+BROWSER_SHUTDOWN_TIMEOUT_SECONDS = 5
 
 
 async def _reject_optional_youtube_consent(page: Any) -> None:
@@ -60,6 +71,20 @@ async def _prepare_search_results(page: Any) -> bool:
     try:
         await page.locator(VIDEO_CARD_SELECTOR).first.wait_for(
             state="attached", timeout=SEARCH_RESULT_HYDRATION_TIMEOUT_MS
+        )
+    except PlaywrightTimeoutError:
+        return False
+    return True
+
+
+async def _prepare_video_page(page: Any) -> bool:
+    """Use response-commit navigation, then bound YouTube's watch-page hydration."""
+    from playwright.async_api import TimeoutError as PlaywrightTimeoutError  # type: ignore
+
+    await _reject_optional_youtube_consent(page)
+    try:
+        await page.locator(VIDEO_PAGE_HYDRATION_SELECTOR).first.wait_for(
+            state="attached", timeout=VIDEO_PAGE_HYDRATION_TIMEOUT_MS
         )
     except PlaywrightTimeoutError:
         return False
@@ -171,32 +196,64 @@ class PlaywrightBrowserSource:
             from playwright.async_api import Error as PlaywrightError, async_playwright  # type: ignore
         except ImportError as exc:
             raise NicheIntelError("Playwright is not installed; install the browser extra", ErrorCode.CONFIGURATION) from exc
-        async with async_playwright() as playwright:
+        manager = async_playwright()
+        playwright = await manager.start()
+        context = None
+        try:
             try:
-                context = await playwright.chromium.launch_persistent_context(
-                    str(self.profile_root / profile_id),
-                    headless=self.settings.browser_headless,
-                    executable_path=self.settings.browser_executable_path,
+                context = await asyncio.wait_for(
+                    playwright.chromium.launch_persistent_context(
+                        str(self.profile_root / profile_id),
+                        headless=self.settings.browser_headless,
+                        executable_path=self.settings.browser_executable_path,
+                    ),
+                    timeout=VIDEO_PAGE_NAVIGATION_TIMEOUT_MS / 1_000,
                 )
-            except PlaywrightError as exc:
+            except (PlaywrightError, TimeoutError) as exc:
                 raise NicheIntelError(f"Chromium inspection profile could not start: {type(exc).__name__}", ErrorCode.CONFIGURATION) from exc
             try:
                 return await self._inspect_video_context(context, video_id, url, profile_id, capture_frames)
             except PlaywrightError as exc:
-                raise NicheIntelError(f"browser video inspection unavailable for {video_id}: {type(exc).__name__}", ErrorCode.SOURCE_UNAVAILABLE) from exc
-            finally:
+                detail = " ".join(str(exc).split())[-300:]
+                raise NicheIntelError(
+                    f"browser video inspection unavailable for {video_id}: {type(exc).__name__}: {detail}",
+                    ErrorCode.SOURCE_UNAVAILABLE,
+                ) from exc
+        finally:
+            if context is not None:
                 try:
-                    await context.close()
-                except PlaywrightError:
+                    await asyncio.wait_for(
+                        context.close(), timeout=BROWSER_SHUTDOWN_TIMEOUT_SECONDS
+                    )
+                except (PlaywrightError, TimeoutError):
                     pass
+            try:
+                await asyncio.wait_for(
+                    playwright.stop(), timeout=BROWSER_SHUTDOWN_TIMEOUT_SECONDS
+                )
+            except (PlaywrightError, TimeoutError):
+                pass
 
     async def _inspect_video_context(self, context: Any, video_id: str, url: str, profile_id: str, capture_frames: bool = True) -> BrowserMediaRecord:
+        from playwright.async_api import Error as PlaywrightError  # type: ignore
+
         page = await context.new_page()
-        response = await page.goto(url, wait_until="domcontentloaded")
+        page.set_default_timeout(VIDEO_PAGE_OPERATION_TIMEOUT_MS)
+        page.set_default_navigation_timeout(VIDEO_PAGE_NAVIGATION_TIMEOUT_MS)
+        response = await page.goto(
+            url,
+            wait_until="commit",
+            timeout=VIDEO_PAGE_NAVIGATION_TIMEOUT_MS,
+        )
         if response is None or not response.ok:
             status = response.status if response is not None else "no response"
             raise NicheIntelError(
                 f"browser video inspection returned {status} for {video_id}",
+                ErrorCode.SOURCE_UNAVAILABLE,
+            )
+        if not await _prepare_video_page(page):
+            raise NicheIntelError(
+                f"browser video page did not hydrate for {video_id}",
                 ErrorCode.SOURCE_UNAVAILABLE,
             )
         await page.wait_for_timeout(1200)
@@ -216,13 +273,19 @@ class PlaywrightBrowserSource:
             except Exception:
                 pass
         transcript_locator = page.locator("#transcript, ytd-transcript-segment-renderer, [aria-label*='transcript']")
-        transcript = await transcript_locator.first.inner_text() if await transcript_locator.count() else None
+        try:
+            transcript = await transcript_locator.first.inner_text() if await transcript_locator.count() else None
+        except PlaywrightError:
+            transcript = None
         presentation = await page.locator("ytd-reel-video-renderer, #shorts-container").count()
-        video_data = await page.locator("video").first.evaluate("el => ({duration: Number.isFinite(el.duration) ? el.duration : null, width: el.videoWidth, height: el.videoHeight})") if await page.locator("video").count() else {}
+        video_locator = page.locator("video").first
+        try:
+            video_data = await video_locator.evaluate("el => ({duration: Number.isFinite(el.duration) ? el.duration : null, width: el.videoWidth, height: el.videoHeight})") if await video_locator.count() else {}
+        except PlaywrightError:
+            video_data = {}
         has_captions = bool(await page.locator(".ytp-caption-segment").count())
         structure = [text for text in ["visible opening", "captioned" if has_captions else None, "shorts presentation" if presentation else None] if text]
         frames: list[str] = []
-        video_locator = page.locator("video").first
         duration = video_data.get("duration") or 0
         for index, fraction in enumerate((.02, .18, .45, .72, .92) if capture_frames else ()):
             if duration and await video_locator.count():
@@ -232,11 +295,18 @@ class PlaywrightBrowserSource:
                 except Exception:
                     pass
             screenshot = str(self.profile_root / profile_id / f"video-{video_id}-{index}.png")
-            await page.screenshot(path=screenshot)
-            frames.append(screenshot)
+            try:
+                await page.screenshot(
+                    path=screenshot,
+                    animations="disabled",
+                    timeout=VIDEO_PAGE_OPERATION_TIMEOUT_MS,
+                )
+                frames.append(screenshot)
+            except PlaywrightError:
+                continue
         return BrowserMediaRecord(
             source_profile=profile_id, is_short_presentation=bool(presentation), visible_transcript=transcript,
-            thumbnail_ref=None, frame_refs=frames, opening_visual_summary="Opening frame captured for multimodal interpretation" if capture_frames else None, caption_style="YouTube captions visible" if has_captions else None,
+            thumbnail_ref=None, frame_refs=frames, opening_visual_summary="Opening frame captured for multimodal interpretation" if frames else None, caption_style="YouTube captions visible" if has_captions else None,
             observable_structure=structure or ["visible page inspection"], observed_at=datetime.now(timezone.utc), confidence=.7,
             first_spoken_line=(transcript or "").splitlines()[0] if transcript else None,
             duration_seconds=video_data.get("duration"), scene_change_count=None, average_shot_duration_seconds=None,

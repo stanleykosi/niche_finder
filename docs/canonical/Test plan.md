@@ -369,6 +369,10 @@ typed configuration error and creates no per-candidate diagnostics. Discovery
 context tests prove a failed initial candidate retains its known URL, title,
 channel, visible age/views, Shorts presentation, position, screenshot, and raw
 browser payload.
+Video-page browser regressions prove navigation stops at response commit,
+optional consent is rejected, a real watch/Shorts surface must hydrate within
+the bound, and frame sampling uses bounded per-operation timeouts rather than
+returning empty pages after cumulative default waits.
 Cross-media cohort tests prove Shorts and long-form videos with the same channel
 and repeatable-format label still receive separate baselines. Channel-feed
 tests prove one unavailable feed creates evidence while later channels expand,
