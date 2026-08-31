@@ -101,12 +101,18 @@ Chromium Worker   YouTube API Worker   AI Worker    Asset Connectors
 - pytest-asyncio
 - pytest-socket or equivalent network blocker
 - respx for HTTP mocks
-- Playwright tests against local fixture pages
+- Playwright tests against hosted fixture pages
 - Vitest for frontend unit tests
-- Playwright frontend E2E against the local stack
+- Playwright frontend E2E against deployed Vercel and Railway services
 
-### Local orchestration
-- Docker Compose
+All test execution occurs in hosted Vercel/Railway compute. Do not install
+test, browser, ML, or GPU dependencies on the editing workstation and do not
+start the stack there. A failing hosted build, deployment, test, or live run is
+valid diagnostic evidence and must be repaired through hosted logs and a new
+deployment; it is not grounds for creating a local prerequisite gate.
+
+### Reference orchestration
+- Docker Compose files are retained as architecture/reference artifacts but are not executed on the editing workstation.
 - Services:
   - postgres
   - redis
@@ -188,16 +194,16 @@ APP_MODE=production
 ### closed_test
 - External networking is blocked.
 - All YouTube responses come from fixtures/mocks.
-- Browser research uses a local fixture website that mimics the page states needed by the worker.
+- Browser research uses a hosted fixture website that mimics the page states needed by the worker.
 - AI always uses the deterministic fake provider in closed mode; OpenRouter and Ollama are never contacted there.
 - No credentials are required.
 
 ### live_test
 - YouTube Data API enabled.
 - Chromium enabled against live YouTube.
-- AI provider uses OpenRouter when configured and installed; automatic startup selection may choose local Ollama next, but an active run never changes providers.
+- AI provider uses OpenRouter when configured and installed; automatic startup selection may choose a configured hosted Ollama endpoint next, but an active run never changes providers.
 - Only bounded smoke research is allowed.
-- Must never be invoked automatically by the closed-test runner.
+- Must never be invoked automatically by the hosted fixture-test runner.
 
 ## 5. Environment variables
 
@@ -1043,7 +1049,7 @@ Expose `/health` and source-health endpoints.
 - Use explicit allowed host rules in live browser tasks.
 - Treat browser-extracted text as untrusted input.
 - AI prompts must separate instructions from retrieved page content.
-- Closed test must prove external networking is blocked.
+- Hosted fixture validation must prove external networking is blocked when isolation is under test.
 
 ## 19. Coding constraints
 - Full type hints in Python.
@@ -1059,7 +1065,7 @@ Expose `/health` and source-health endpoints.
 - No TODO placeholders in required MVP paths at completion.
 
 ## 20. Definition of implementation complete
-Implementation is complete before test execution only when:
+Implementation is ready for hosted validation when:
 - repository structure exists
 - application code exists
 - migrations exist

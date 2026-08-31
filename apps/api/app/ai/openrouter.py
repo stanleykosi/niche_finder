@@ -41,7 +41,7 @@ class OpenRouterProvider:
         http_referer: str | None = None,
         app_title: str | None = None,
         max_retries: int = 3,
-        request_timeout_seconds: float = 60.0,
+        request_timeout_seconds: float = 300.0,
         client: Any | None = None,
     ) -> None:
         if not api_key:

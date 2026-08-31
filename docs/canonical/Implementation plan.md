@@ -1,19 +1,24 @@
 # Implementation Plan
 
 ## Execution model
-Codex must implement the entire planned MVP before executing tests.
+Codex uses this workstation only to inspect and edit the repository. Every
+build, test, migration, browser check, smoke test, and research run executes in
+the deployed Vercel/Railway environment. No project dependency installation,
+local service startup, local browser execution, or local test execution is
+permitted on this workstation.
 
 **Important sequence:**
 1. Read all canonical documents.
 2. Inspect repository.
 3. Write architecture, production code, fixtures, test code, scripts, configuration, and documentation.
-4. Do not run unit, integration, E2E, browser, or live tests while implementation is incomplete.
-5. When all required implementation files exist, run the full closed test.
-6. Repair failures until the closed test is green.
-7. Stop at the live-test gate and report what credentials/configuration are required.
-8. Live APIs are tested only in the explicit live-test phase.
+4. Do not run unit, integration, E2E, browser, or live tests locally.
+5. Deploy completed changes to Vercel/Railway and run the relevant validation there.
+6. Treat hosted failures as test results, repair the correct layer, redeploy, and verify in hosted compute.
+7. A closed-suite pass is not a prerequisite for deployment or live validation.
+8. Use live APIs only in explicitly configured hosted live-test or production runs.
 
-Static file inspection, formatting while editing, and dependency resolution are allowed before the closed-test gate. Do not execute test suites early.
+Static inspection and source edits are allowed locally. Dependency resolution,
+builds, tests, browsers, services, and application runs are hosted-only.
 
 ---
 
@@ -571,25 +576,17 @@ Update `Build state.md`.
 
 ---
 
-# CLOSED-TEST GATE
+# HOSTED VALIDATION POLICY
 
-Before executing any test, verify every required implementation item above exists.
-
-Then run the closed test described in `Test plan.md`.
-
-If closed test fails:
-1. inspect failure
-2. repair implementation
-3. rerun the full closed test
-4. repeat until green
-
-Do not skip failed tests.
-
-Do not use live services to make closed tests pass.
+There is no mandatory local closed-test gate. When validation is useful, deploy
+the revision and execute the relevant fixture, integration, browser, or live
+check inside Vercel/Railway. Inspect platform build/runtime logs and persisted
+run evidence. A failed hosted check is a test result; repair, redeploy, and
+repeat without reproducing the stack on this workstation.
 
 ## Niche-finding accuracy expansion
 
-Implement before the next closed gate:
+Implement before the next relevant hosted validation:
 1. Conservative Shorts classification and source evidence.
 2. Channel upload expansion, public performance profiles, and 45/90-day outlier cohorts.
 3. Deterministic matched winner/loser selection plus structured AI comparison.
@@ -602,7 +599,7 @@ Implement before the next closed gate:
 10. Keyless live-smoke metadata via Chromium/yt-dlp, optional Deepgram word-timestamp transcription, selective-filmstrip visual analysis, multimodal asset-fit checks, unified API-unit accounting, repeated snapshot momentum, competitor ranges, and per-idea faceless annotations.
 10. Closed fixtures and tests for each deterministic decision.
 
-## Review remediation before the next closed gate
+## Review remediation before the next hosted validation
 
 1. Filter same-channel/format baseline cohorts to uploads no older than the
    90-day supporting window while retaining rates for candidate reporting.
@@ -616,7 +613,7 @@ Implement before the next closed gate:
 5. Route direct YouTube video/channel URLs without search encoding and hash all
    browser screenshot filenames.
 6. Add deterministic unit/integration regressions for every item above, update
-   the implementation precheck, then execute the full closed gate once.
+   the implementation precheck, then execute relevant validation in hosted compute.
 
 ## Keyless provenance and Compose remediation
 
@@ -629,7 +626,7 @@ Implement before the next closed gate:
 4. Isolate channel expansion failures per upload, continue with usable public
    videos, and drain structured skip diagnostics into the run evidence ledger.
 5. Verify driver construction, date parsing/rejection, metadata separation,
-   partial-feed resilience, and persisted diagnostics in the closed suite.
+   partial-feed resilience, and persisted diagnostics in a hosted fixture suite.
 
 ## Uniform keyless enrichment remediation
 
@@ -690,18 +687,18 @@ Implement before the next closed gate:
 5. Keep 46–90-day major outliers as supporting evidence, but exclude them from
    backend and frontend collections labelled as current.
 6. Add backend, contract, integration, and frontend regressions for all five
-   behaviors before running the complete closed gate.
+   behaviors before running the relevant hosted validation.
 
 ---
 
-# LIVE-TEST GATE
+# HOSTED LIVE VALIDATION
 
-Only after the complete closed test is green:
+Live validation does not depend on a local or closed-suite pass:
 
 1. update `Build state.md`
-2. report the exact live prerequisites
-3. prepare live configuration
-4. run only the bounded live smoke test when live credentials/configuration are available
+2. confirm the exact hosted prerequisites
+3. prepare Vercel/Railway configuration
+4. run the bounded live smoke or requested research run in hosted compute
 
 The first live run must be intentionally small:
 - one research profile

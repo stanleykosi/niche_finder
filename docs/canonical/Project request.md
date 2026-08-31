@@ -240,13 +240,13 @@ Clip feasibility is the first candidate hard gate. At least 70% of proposed idea
 7. **No invented analytics.**
 8. **Browser and API observations are distinct data types.**
 9. **Research must be bounded and reproducible.**
-10. **The system must work locally before live services are enabled.**
+10. **The deployed system is the validation environment.** This workstation is editing/control-plane only; builds, tests, browser checks, migrations, and research runs execute on Vercel/Railway rather than locally.
 
 ## 9. MVP success criteria
 The MVP is complete when it can:
 
 1. Start a research run from a seed query.
-2. Execute a bounded Chromium discovery plan against the local closed-test fixture.
+2. Execute a bounded Chromium discovery plan in the Railway worker against hosted fixtures or explicitly enabled live sources.
 3. Route mock YouTube API requests through a quota-aware source router.
 4. Discover candidate videos/channels.
 5. Expand channels into recent uploads.
@@ -257,8 +257,8 @@ The MVP is complete when it can:
 10. Produce ranked niche recommendations with evidence.
 11. Display results in the web dashboard.
 12. Preserve all observations and provenance in the database.
-13. Pass the complete closed-test suite with external networking disabled.
-14. Support a separately gated live-test mode for real APIs and Chromium after closed testing passes.
+13. Support hosted fixture validation with external networking blocked where the test requires isolation; this is useful evidence, not a prerequisite for deployment or live validation.
+14. Support explicitly configured live-test mode for real APIs and Chromium in the hosted Railway environment.
 
 ## 10. Explicit non-goals for the first build
 - Becoming a general YouTube SEO suite.

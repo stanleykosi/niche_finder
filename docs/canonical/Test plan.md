@@ -1,26 +1,29 @@
 # Test Plan
 
 ## 1. Testing philosophy
-The repository is implemented completely before tests are executed.
+This workstation is editing/control-plane only. Do not install dependencies,
+build the application, start services, launch browsers, execute tests, or run
+research locally. All validation runs in the deployed Vercel/Railway
+environment, and no local closed-test result is required before deployment or
+live validation.
 
-All test code and fixtures may be written during implementation, but execution begins only after the implementation-complete gate is satisfied.
+Testing has two independent hosted modes:
 
-Testing has two strict phases:
-
-1. **Closed test**
+1. **Hosted fixture test**
    - No external network.
    - No live YouTube.
    - No live external APIs.
    - No credentials.
-   - Full architecture exercised using fixtures/local services.
+   - Relevant architecture exercised using fixtures in hosted services.
 
-2. **Live test**
-   - Begins only after closed test is fully green.
+2. **Hosted live test**
+   - May run whenever the requested hosted revision and credentials are ready.
    - Explicitly enabled.
    - Uses tightly bounded real calls.
 
 ## 2. Implementation-complete precheck
-`scripts/closed_test.py` must first verify that required files/modules exist.
+When invoked inside a hosted validation job, `scripts/closed_test.py` first
+verifies that required files/modules exist.
 
 Required categories:
 - backend
@@ -48,7 +51,7 @@ Required categories:
 - README
 - live smoke test script
 
-If required implementation is missing, closed testing stops with a clear error.
+If required implementation is missing, hosted validation reports a clear failure.
 
 ## 3. Closed-network guarantee
 When `APP_MODE=closed_test`:
@@ -269,8 +272,8 @@ E2E:
 6. verify evidence and outlier data
 7. verify demo/fixture label
 
-## 11. Full closed-system test
-The final closed test must boot:
+## 11. Hosted fixture-system test
+When requested, hosted fixture validation exercises:
 
 - PostgreSQL
 - Redis
@@ -306,14 +309,9 @@ Pass criteria:
 - competitor channel performance is explicitly labelled as a public-data proxy
 - stale, one-hit, and saturated fixtures fail the relevant current-demand, replication, or saturation gates
 
-## 12. Closed-test command
-Provide a single command, for example:
-
-```bash
-make closed-test
-```
-
-It must:
+## 12. Hosted test execution
+Test commands run only inside Railway/Vercel build or runtime compute, never
+from the editing workstation. The hosted validation job must:
 1. validate implementation-complete gate
 2. build/start closed-test services
 3. apply migrations
@@ -322,7 +320,7 @@ It must:
 6. run frontend tests
 7. run full E2E
 8. print final pass/fail summary
-9. tear down cleanly unless a debug flag is supplied
+9. tear down ephemeral hosted test resources cleanly unless diagnostics are retained
 
 ## 13. Live test
 
@@ -330,9 +328,9 @@ The live smoke is a genuine bounded end-to-end path and accepts zero API
 keys. With no keys it uses Chromium discovery, yt-dlp public metadata,
 keyless web asset search, and deterministic AI. OpenRouter, Deepgram, YouTube
 Data API, Pexels, and Pixabay are optional accuracy/coverage upgrades. The
-closed runner must never invoke this live path.
+hosted fixture runner must never invoke this live path.
 
-The closed suite additionally verifies date-anchored fixtures, unified API
+The hosted fixture suite additionally verifies date-anchored fixtures, unified API
 quota units, keyless metadata normalization, English/faceless normalization,
 transcript-first selective filmstrips, semantic clip-fit and early rejection,
 OpenRouter retries/no mid-run failover, competitor ranges, multi-window
@@ -454,13 +452,10 @@ pre-deploy migration is documented independently from the worker command; and
 only the mounted worker initializes, cleans, measures, and publishes runtime
 artifact storage while the API reads the shared measurement without touching
 its isolated artifact roots.
-The live test is separate and never invoked by `make closed-test`.
+The live test is separately configured but does not wait for a closed-test gate.
 
-Command:
-
-```bash
-make live-smoke
-```
+Invoke the live smoke through the deployed Railway worker/API and observe it
+through hosted status, logs, evidence, and report endpoints.
 
 Required explicit environment:
 ```text
@@ -484,11 +479,11 @@ Verify:
 - YouTube API returns structured enrichment
 - API/browser records are merged by canonical IDs
 - outlier analytics execute
-- local AI provider returns valid structured output
+- configured hosted AI provider returns valid structured output
 - a final niche report is generated
 
 ## 14. Live-test failure rule
-A live failure must not be "fixed" by weakening the closed tests.
+A live failure must not be "fixed" by weakening fixture assertions.
 
 Classify the failure:
 - credentials/configuration
@@ -499,4 +494,6 @@ Classify the failure:
 - AI provider
 - application bug
 
-Repair the correct layer, rerun closed test, then rerun live smoke.
+Repair the correct layer, redeploy, then rerun the relevant hosted check. A
+hosted failure is itself valid test evidence; do not reproduce the stack or
+install its dependencies locally.

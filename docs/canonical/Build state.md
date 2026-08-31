@@ -1,5 +1,16 @@
 # Build State
 
+## Current execution policy — 2026-08-31
+
+This workstation is editing/control-plane only. Do not install project
+dependencies, run builds or tests, start services or browsers, or execute
+fixture/live research locally. All future migrations, builds, tests, browser
+checks, smoke tests, and research runs execute in the deployed Vercel/Railway
+environment. A local closed-test pass is no longer a deployment or live-run
+gate; hosted failures are valid test evidence and are diagnosed from platform
+logs and persisted run evidence. Historical local closed-test records below
+are retained only as provenance and do not override this policy.
+
 This file is the execution ledger for Codex. The canonical source remains the documents in this directory.
 
 ## Status values
@@ -107,26 +118,24 @@ evidence, released its reservation, and later targets continued. The run was
 then deliberately cancelled after eight videos because every watch-page
 inspection exposed a separate Playwright timeout and no Chromium frame file
 was produced. Discovery remained hydrated and functional; the remaining fault
-was isolated to video-page navigation/cleanup. Remediation is in progress to
-use response-commit navigation, bounded watch-surface hydration, bounded
-per-operation frame work, and bounded Chromium context/driver shutdown before
-the next full attempt. The repair has now passed the complete closed gate with
-251 backend tests, 12 frontend tests, one Playwright end-to-end test, the
-strict Next.js build, fresh PostgreSQL migrations, and the full local stack
-with zero live services contacted; Railway redeployment is pending.
+was isolated to video-page navigation/cleanup. The deployed repair now uses
+response-commit navigation, bounded watch-surface hydration, bounded
+per-operation frame work, and bounded Chromium context/driver shutdown.
 
 The fourth hosted `storytelling` attempt
 `87ade25c-371e-4046-80eb-af86be2a1bfa` began on the hosted Chromium repair and
 was deliberately cancelled after one in-process OpenRouter-backed preflight
 left the evidence ledger unchanged for more than ten minutes. No Chromium,
 yt-dlp, or ffmpeg child was active and the worker remained healthy, isolating
-the missing boundary to the SDK request. Remediation is in progress to enforce
-one configurable 60-second total deadline across each structured request and
-all of its retries before the final live attempt. The repair has now passed
-the complete closed gate with 252 backend tests, 12 frontend tests, one
-Playwright end-to-end test, the strict Next.js build, fresh PostgreSQL
-migrations, and the full local stack with zero live services contacted;
-Railway redeployment is pending.
+the missing boundary to the SDK request. A fifth hosted attempt
+`1755652c-3772-4037-968f-0ee89f087095` then failed cleanly at the original
+60-second request deadline during initial idea generation. Hosted probes
+confirmed the key, model, structured-output schema, and connectivity were
+valid: classification completed in 17.5 seconds and a ten-idea response took
+about 56 seconds, while a thirty-idea response reproduced the deadline. The
+request remains bounded against a dead upstream, but its configurable default
+is now five minutes (with a thirty-minute validated upper range) so normal
+large structured generations can finish before the final live attempt.
 
 ## Implementation checklist
 
@@ -191,7 +200,7 @@ The niche-finding accuracy expansion, keyless live path, Deepgram/selective-film
 Required implementation files, fixtures, tests, scripts, UI, and docs have been written. Live sources are gated from closed mode.
 
 ### Closed test
-`CLOSED_TEST_GREEN — CURRENT OPENROUTER DEADLINE REMEDIATION`
+`HISTORICAL_LOCAL_RESULT — NON-GATING`
 
 Current OpenRouter deadline remediation verification record:
 - command: `PATH=/home/stanley/niche_finder/.venv/bin:/home/stanley/.nvm/versions/node/v20.19.4/bin:$PATH make closed-test`;
@@ -608,11 +617,16 @@ exposed a per-video yt-dlp bot challenge. Hosted run
 repair and then isolated cumulative watch-page Chromium timeouts. The
 video-page remediation passed its hosted five-frame probe; run
 `87ade25c-371e-4046-80eb-af86be2a1bfa` then exposed an unbounded OpenRouter SDK
-wait, whose deadline remediation must pass the closed gate before the next live
-attempt.
+wait. Its deadline remediation is verified through the next hosted deployment
+and live attempt under the current execution policy.
 
 ## Current blockers
-None in the implementation or closed-mode product flow. Use `nvm use` before `make closed-test`; frontend dependencies and the exact Playwright Chromium revision are mandatory and validated. Docker is not integrated with this WSL environment, so the closed runner automatically boots fresh PostgreSQL, Redis, FastAPI, ARQ, fixture, and Next.js processes locally; the isolated Docker Compose path remains preferred and implemented. Live verification is in progress. A zero-key smoke requires Chromium, yt-dlp, ffmpeg, and network access; the recommended accurate run also configures OpenRouter and Deepgram, with the YouTube Data API and asset/trend providers optional.
+None in the editing environment. Local dependency installation and local
+execution are prohibited by the current policy. Live verification continues
+only on Vercel/Railway. A zero-key hosted smoke requires Chromium, yt-dlp,
+ffmpeg, and network access; the recommended accurate run also configures
+OpenRouter and Deepgram, with the YouTube Data API and asset/trend providers
+optional.
 
 ## Architectural deviations
 - The control plane uses synchronous SQLAlchemy sessions with a SQLite closed-mode fallback so the complete fixture suite can run without Docker/PostgreSQL drivers. PostgreSQL/pgvector URLs, SQLAlchemy models, and the Compose service remain the deployment path. Affected files: `apps/api/app/db/session.py`, `apps/api/app/repositories/store.py`.

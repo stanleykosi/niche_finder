@@ -18,10 +18,10 @@ Read these in order before changing code:
 If code, comments, old docs, or assumptions conflict with `/docs/canonical/`, the canonical docs win.
 
 ## Execution rules
-- Implement the full architecture and all required files before running tests.
-- Do not use live YouTube, Google, Ollama-cloud, or other external services during implementation or the closed test.
-- After implementation is complete, run the full closed test suite once and repair until green.
-- Only after the closed test is green may the live-test phase begin.
+- This workstation is editing/control-plane only. Do not install project dependencies, start application services, run builds, run test suites, launch browsers, or execute research jobs locally.
+- Run all builds, tests, browser checks, migrations, smoke tests, and research jobs only in the deployed Vercel and Railway environments using their configured services and MCP tooling.
+- A local closed-test pass is not required before deployment or live validation. Hosted failures are valid test evidence: inspect hosted logs/status, repair the correct layer, redeploy, and verify again in the hosted environment.
+- Do not add or restore heavyweight local ML/GPU dependencies. The workstation has no GPU and limited CPU capacity.
 - Keep `docs/canonical/Build state.md` updated as work progresses.
 - Never invent missing data. Preserve source, timestamp, and confidence for derived observations.
 - Prefer deterministic code for metrics; use AI only for interpretation/classification.

@@ -2,18 +2,14 @@
 
 The engine finds repeatable YouTube formats with current demand, repeated outliers, a workable idea and clip ceiling, manageable direct competition, and a defensible viral mechanism. It is deliberately evidence-first: browser observations and structured API observations remain separate, deterministic metrics are calculated by Python, and AI only interprets the evidence.
 
-## Quick start: closed mode
+## Hosted development and validation
 
-Closed mode is the default development path. The closed gate prefers an isolated Docker Compose stack with PostgreSQL, Redis, FastAPI, ARQ, the local browser fixture server, and Next.js; deterministic fixture sources and fake AI ensure no live service is contacted. When Docker integration is unavailable, the runner boots the same six boundaries from installed PostgreSQL/Redis and repository runtimes with fresh temporary state. Direct manual API development may still use the SQLite fallback.
-
-```bash
-python3 -m venv .venv
-. .venv/bin/activate
-pip install -e '.[dev,openrouter,media]'
-nvm use
-npm --prefix apps/web install
-make closed-test
-```
+This workstation is editing/control-plane only. Do not install the project
+dependency set or run builds, services, browsers, tests, fixture jobs, or live
+research here. Deploy the frontend to Vercel and the API/worker to Railway;
+perform all fixture, integration, browser, migration, smoke, and live checks in
+those hosted environments. A hosted failure is a valid test result and should
+be diagnosed from platform logs and persisted run evidence.
 
 AI provider selection is automatic by default. Outside closed mode, a configured
 OpenRouter key and installed SDK are preferred, then a configured Ollama model,
@@ -27,18 +23,12 @@ rate limits can change, so a paid model is recommended for dependable runs.
 Unknown provider names are rejected during typed startup validation instead of
 silently entering automatic selection.
 
-Run the local API and dashboard manually:
-
-```bash
-APP_MODE=closed_test AI_PROVIDER=fake uvicorn apps.api.app.main:app --reload
-cd apps/web && npm install && npm run dev
-```
-
-The API is available at `http://localhost:8000`, and the dashboard at `http://localhost:3000`. The dashboard labels fixture results as `CLOSED / FIXTURE DATA`.
+Fixture mode remains available for hosted isolated validation and is labelled
+`CLOSED / FIXTURE DATA` in the dashboard.
 
 ## Architecture
 
-`apps/api/app` contains the control plane, domain contracts, SQLAlchemy persistence models, source adapters, deterministic analytics, AI providers, report engine, and FastAPI routes. The worker packages are thin entry points around the same orchestrator. `fixtures/` is the closed-test source of truth for local YouTube pages, API payloads, and AI outputs. `apps/web` is a Next.js App Router client for creating runs and reading reports.
+`apps/api/app` contains the control plane, domain contracts, SQLAlchemy persistence models, source adapters, deterministic analytics, AI providers, report engine, and FastAPI routes. The worker packages are thin entry points around the same orchestrator. `fixtures/` is the closed-test source of truth for hosted fixture pages, API payloads, and AI outputs. `apps/web` is a Next.js App Router client for creating runs and reading reports.
 
 The application selects sources through a quota-aware router. Development and
 closed modes use visibly labelled fixtures and refuse live source construction.
@@ -72,13 +62,9 @@ The public APIs cannot provide private competitor retention or exact analytics. 
 
 ## Operations
 
-```bash
-make migrate              # create/update the configured database schema
-make seed-demo            # create one completed fixture run through the API
-make cleanup-runtime      # remove expired frames/screenshots/profiles and report reclaimed bytes
-make closed-test          # isolated full Compose stack + migrations + all unit/integration/browser/UI tests
-make live-smoke           # execute one bounded live research/report job; never run by closed-test
-```
+Operational migrations, cleanup, fixture checks, and live smoke commands are
+executed only inside the appropriate Railway/Vercel service or hosted build
+job. Do not invoke the Make targets on the editing workstation.
 
 ## Vercel + Railway deployment
 
@@ -172,7 +158,7 @@ OPENROUTER_API_KEY=...
 OPENROUTER_MODEL=openrouter/free
 OPENROUTER_VISION_MODEL=<optional vision-capable model; defaults to the main model>
 OPENROUTER_MAX_RETRIES=3
-OPENROUTER_REQUEST_TIMEOUT_SECONDS=60
+OPENROUTER_REQUEST_TIMEOUT_SECONDS=300
 DEEPGRAM_API_KEY=... # optional but required for full word-timestamp transcripts
 DEEPGRAM_MODEL=nova-3
 # Optional live clip preflight. Configure both for the required two-source diversity.
