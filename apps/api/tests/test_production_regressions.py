@@ -523,6 +523,62 @@ def test_orchestrator_discovery_obeys_health_router_and_uses_api_fallback():
     assert audits[0][0] == SourceType.YOUTUBE_API.value
 
 
+def test_empty_browser_discovery_executes_audited_api_fallback():
+    observations = []
+    audits = []
+    run = SimpleNamespace(id="run-empty-browser", status="queued")
+
+    class Repository:
+        def get_run(self, run_id):
+            assert run_id == run.id
+            return run
+
+        def transition(self, item, status, reason=None):  # noqa: ARG002
+            item.status = status
+
+        def add_routing_audit(self, run_id, task, source, reason, quota_delta=0):
+            audits.append((source, reason, quota_delta))
+
+        def add_search_observation(self, run_id, payload):
+            observations.append(payload)
+
+    class Browser:
+        async def discover(self, request):
+            return DiscoveryResult(SourceType.BROWSER, request.query, [])
+
+    class Youtube:
+        async def discover(self, request):
+            return DiscoveryResult(SourceType.YOUTUBE_API, request.query, [
+                SearchResult(
+                    "video-1", "https://youtube.com/watch?v=video-1", "Video", "channel-1",
+                    "Channel", "unknown", "2026-08-01", False, 1,
+                )
+            ])
+
+    orchestrator = object.__new__(ResearchOrchestrator)
+    orchestrator.settings = Settings(app_mode=AppMode.LIVE_TEST, youtube_api_key="configured")
+    orchestrator.repository = Repository()
+    orchestrator.router = SourceRouter(AppMode.LIVE_TEST, QuotaManager(10, 2))
+    orchestrator.source_health = lambda: (True, True)
+    orchestrator.browser = Browser()
+    orchestrator.youtube = Youtube()
+    orchestrator.artifacts = SimpleNamespace(register=lambda *args, **kwargs: None)
+    plan = SimpleNamespace(
+        queries=["storytelling"], visited_queries=set(), visited_channels=set(),
+        visited_videos=set(), should_stop=lambda new_results, attempted: False,
+        discovery_strategy="seeded",
+    )
+    request = ResearchRunCreate(
+        seeds=["storytelling"],
+        limits={"max_queries": 1, "max_results_per_query": 2, "max_channels": 2, "max_videos": 4},
+    )
+    found = asyncio.run(orchestrator._discover(run.id, request, plan))
+    assert list(found) == ["video-1"]
+    assert observations[0]["source"] == SourceType.YOUTUBE_API.value
+    assert [audit[0] for audit in audits] == [SourceType.BROWSER.value, SourceType.YOUTUBE_API.value]
+    assert "no hydrated result cards" in audits[-1][1]
+
+
 def test_cross_market_discovery_samples_every_planned_market_before_depth():
     calls = []
     observations = []

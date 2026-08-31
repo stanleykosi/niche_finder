@@ -13,6 +13,7 @@ from apps.api.app.sources.browser import (
     PlaywrightBrowserSource,
     _direct_video_id,
     _discovery_target,
+    _prepare_search_results,
     _safe_name,
 )
 
@@ -74,3 +75,38 @@ def test_channel_grid_renderers_are_included_in_video_card_extraction():
     assert "ytd-grid-video-renderer a#video-title" in VIDEO_CARD_SELECTOR
     assert "ancestor::ytd-rich-item-renderer" in VIDEO_CARD_CONTAINER_XPATH
     assert "ancestor::ytd-grid-video-renderer" in VIDEO_CARD_CONTAINER_XPATH
+
+
+def test_browser_rejects_optional_consent_and_waits_for_card_hydration():
+    events = []
+
+    class Locator:
+        def __init__(self, kind):
+            self.kind = kind
+
+        @property
+        def first(self):
+            return self
+
+        def get_by_role(self, role, name):
+            assert role == "button"
+            assert name.search("Reject all")
+            return Locator("reject")
+
+        async def count(self):
+            return 1
+
+        async def click(self, timeout):
+            events.append(("reject", timeout))
+
+        async def wait_for(self, state, timeout):
+            events.append((self.kind, state, timeout))
+
+    class Page:
+        def locator(self, selector):
+            return Locator("consent" if "consent" in selector else "results")
+
+    assert asyncio.run(_prepare_search_results(Page())) is True
+    assert events[0] == ("consent", "attached", 750)
+    assert ("reject", 2000) in events
+    assert events[-1] == ("results", "attached", 5000)

@@ -70,6 +70,21 @@ tests, 12 frontend tests, one Playwright end-to-end test, the strict Next.js
 build, PostgreSQL migrations, Redis/API/ARQ/fixture/Chromium integration, and
 zero live services contacted. The live `storytelling` run remains pending.
 
+The first hosted `storytelling` attempt
+`636b16d9-fd9e-4e1e-baad-bcf4b4528607` failed before media work on
+`2026-08-31` because Chromium sampled YouTube immediately after
+`domcontentloaded`, before its result cards hydrated. The retained worker
+screenshot and a bounded DOM probe confirmed a normal HTTP 200 results page,
+an optional `Before you continue` consent overlay, zero cards at 0 ms, four at
+250 ms, and 15 at 750 ms. Remediation now rejects optional consent without
+accepting personalized cookies, waits up to five seconds for cards, pauses
+after bounded scrolls, rejects navigation-only Shorts links, and executes an
+audited Data API fallback if the hydrated browser result remains empty. Closed
+verification passed with 247 backend tests, 12 frontend tests, one Playwright
+end-to-end test, the strict Next.js build, PostgreSQL migrations, and the full
+local stack with zero live services contacted. The replacement live run is
+pending.
+
 ## Implementation checklist
 
 | Area | Status | Notes |

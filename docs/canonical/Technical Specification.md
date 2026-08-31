@@ -508,6 +508,12 @@ Use:
 6. screenshot/vision fallback
 
 Failures must return partial typed results with explicit missing fields.
+After `domcontentloaded`, live YouTube discovery rejects the optional consent
+prompt through its non-personalized `Reject all` control, waits a bounded five
+seconds for asynchronously hydrated result cards, and pauses briefly after each
+bounded scroll. If the hydrated browser surface is still empty, an available
+YouTube Data API search is executed as an audited fallback rather than treating
+an empty DOM snapshot as a conclusive zero-result market.
 
 ### Limits
 Every browser task must respect:

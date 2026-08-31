@@ -708,6 +708,19 @@ class ResearchOrchestrator:
                     fallback.quota_delta,
                 )
                 result = await self.youtube.discover(discovery_request)
+            if (
+                decision.source == SourceType.BROWSER
+                and not result.results
+                and self.router.api_healthy
+            ):
+                self.router.update_health(browser_healthy=False, api_healthy=True)
+                fallback = self.router.route(RoutingTask("discovery", reproducible=True))
+                self.repository.add_routing_audit(
+                    run_id, "discovery", fallback.source.value,
+                    f"browser returned no hydrated result cards; {fallback.reason}",
+                    fallback.quota_delta,
+                )
+                result = await self.youtube.discover(discovery_request)
             for screenshot_ref in result.screenshot_refs:
                 screenshot_path = Path(screenshot_ref)
                 if screenshot_path.is_file() and str(screenshot_path.resolve()).startswith(str(Path(self.settings.browser_profile_root).resolve())):

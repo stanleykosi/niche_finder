@@ -85,6 +85,7 @@ Include a test that deliberately attempts an external connection and proves it i
 - reserve reached -> browser discovery
 - closed test -> fixtures only
 - unhealthy source -> alternate source
+- empty hydrated browser result -> audited API fallback
 
 ### Analytics
 - views/day
@@ -150,6 +151,7 @@ Every source implementation must satisfy shared contracts.
 - transcript missing
 - lazy loading
 - selector fallback
+- optional-consent rejection and bounded asynchronous card hydration
 - screenshot reference
 - bounded scrolling
 

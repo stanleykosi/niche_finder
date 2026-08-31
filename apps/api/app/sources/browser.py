@@ -29,6 +29,41 @@ VIDEO_CARD_CONTAINER_XPATH = (
     "xpath=ancestor::ytd-video-renderer | ancestor::ytd-reel-item-renderer | "
     "ancestor::ytd-rich-item-renderer | ancestor::ytd-grid-video-renderer"
 )
+YOUTUBE_CONSENT_SELECTOR = "ytd-consent-bump-v2-lightbox"
+CONSENT_DISCOVERY_TIMEOUT_MS = 750
+SEARCH_RESULT_HYDRATION_TIMEOUT_MS = 5_000
+
+
+async def _reject_optional_youtube_consent(page: Any) -> None:
+    """Prefer YouTube's non-personalized consent path when the prompt appears."""
+    from playwright.async_api import Error as PlaywrightError  # type: ignore
+
+    consent = page.locator(YOUTUBE_CONSENT_SELECTOR).first
+    try:
+        await consent.wait_for(state="attached", timeout=CONSENT_DISCOVERY_TIMEOUT_MS)
+        reject = consent.get_by_role("button", name=re.compile(r"^Reject all$", re.I)).first
+        if await reject.count():
+            await reject.click(timeout=2_000)
+            await consent.wait_for(state="hidden", timeout=2_000)
+    except PlaywrightError:
+        # Consent is regional and optional. Its absence or a disappearing
+        # control must not prevent later bounded extraction.
+        pass
+
+
+async def _prepare_search_results(page: Any) -> bool:
+    """Reject optional consent and wait for YouTube's asynchronous card hydration."""
+    from playwright.async_api import TimeoutError as PlaywrightTimeoutError  # type: ignore
+
+    await _reject_optional_youtube_consent(page)
+
+    try:
+        await page.locator(VIDEO_CARD_SELECTOR).first.wait_for(
+            state="attached", timeout=SEARCH_RESULT_HYDRATION_TIMEOUT_MS
+        )
+    except PlaywrightTimeoutError:
+        return False
+    return True
 
 
 class PlaywrightBrowserSource:
@@ -78,6 +113,7 @@ class PlaywrightBrowserSource:
             await page.goto(url, wait_until="domcontentloaded")
             results = []
             if direct_kind == "video":
+                await _reject_optional_youtube_consent(page)
                 from .base import SearchResult
                 video_id = _direct_video_id(url)
                 title_meta = page.locator("meta[name='title'], meta[property='og:title']").first
@@ -90,8 +126,11 @@ class PlaywrightBrowserSource:
                     "", "", "/shorts/" in urlparse(url).path, 1,
                     raw_payload={"direct_input": True, "youtube_presented_as_short": "/shorts/" in urlparse(url).path},
                 ))
+            else:
+                await _prepare_search_results(page)
             for _ in range(min(3, self.settings.browser_max_results_per_query // 10 + 1)):
                 await page.mouse.wheel(0, 800)
+                await page.wait_for_timeout(250)
             cards = await page.locator(VIDEO_CARD_SELECTOR).all()
             seen: set[str] = {item.canonical_url for item in results}
             for position, card in enumerate(cards, start=1):
@@ -103,6 +142,8 @@ class PlaywrightBrowserSource:
                 seen.add(canonical_url)
                 is_short = "/shorts/" in urlparse(canonical_url).path
                 video_id = _direct_video_id(canonical_url)
+                if not video_id:
+                    continue
                 from .base import SearchResult
                 container = card.locator(VIDEO_CARD_CONTAINER_XPATH).first
                 card_text = await container.inner_text() if await container.count() else ""
