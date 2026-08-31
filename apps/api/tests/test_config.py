@@ -41,10 +41,11 @@ def test_closed_mode_protects_network_flag():
 
 
 def test_runtime_threshold_and_system_chromium_path_are_configurable():
-    settings = Settings.from_env({"OUTLIER_THRESHOLD": "3.5", "BROWSER_EXECUTABLE_PATH": "/usr/bin/chromium", "OLLAMA_MAX_RETRIES": "4"})
+    settings = Settings.from_env({"OUTLIER_THRESHOLD": "3.5", "BROWSER_EXECUTABLE_PATH": "/usr/bin/chromium", "OLLAMA_MAX_RETRIES": "4", "OPENROUTER_REQUEST_TIMEOUT_SECONDS": "45"})
     assert settings.outlier_threshold == 3.5
     assert settings.browser_executable_path == "/usr/bin/chromium"
     assert settings.ollama_max_retries == 4
+    assert settings.openrouter_request_timeout_seconds == 45
 
 
 def test_hosted_runtime_parses_port_and_cors_configuration():

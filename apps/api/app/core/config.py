@@ -45,6 +45,7 @@ class Settings(BaseModel):
     openrouter_http_referer: str | None = None
     openrouter_app_title: str = "YouTube Niche Intelligence Engine"
     openrouter_max_retries: int = Field(default=3, ge=0, le=8)
+    openrouter_request_timeout_seconds: float = Field(default=60.0, ge=5, le=300)
     ollama_base_url: str = "http://localhost:11434"
     ollama_model: str | None = None
     ollama_max_retries: int = Field(default=3, ge=0, le=8)
@@ -198,6 +199,7 @@ class Settings(BaseModel):
             "openrouter_http_referer": env.get("OPENROUTER_HTTP_REFERER") or None,
             "openrouter_app_title": env.get("OPENROUTER_APP_TITLE") or "YouTube Niche Intelligence Engine",
             "openrouter_max_retries": env.get("OPENROUTER_MAX_RETRIES", 3),
+            "openrouter_request_timeout_seconds": env.get("OPENROUTER_REQUEST_TIMEOUT_SECONDS", 60),
             "ollama_base_url": env.get("OLLAMA_BASE_URL", "http://localhost:11434"),
             "ollama_model": env.get("OLLAMA_MODEL") or None,
             "ollama_max_retries": env.get("OLLAMA_MAX_RETRIES", 3),

@@ -337,6 +337,9 @@ quota units, keyless metadata normalization, English/faceless normalization,
 transcript-first selective filmstrips, semantic clip-fit and early rejection,
 OpenRouter retries/no mid-run failover, competitor ranges, multi-window
 momentum, and observational winner/loser caveats.
+OpenRouter provider tests additionally prove the SDK receives the configured
+request timeout and the application enforces one total deadline across all
+attempts, including a client coroutine that never returns.
 
 Storage lifecycle tests prove that raw video exists during transcription and
 frame extraction, disappears afterward, is also deleted on transcription

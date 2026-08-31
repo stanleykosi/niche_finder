@@ -115,6 +115,19 @@ the next full attempt. The repair has now passed the complete closed gate with
 strict Next.js build, fresh PostgreSQL migrations, and the full local stack
 with zero live services contacted; Railway redeployment is pending.
 
+The fourth hosted `storytelling` attempt
+`87ade25c-371e-4046-80eb-af86be2a1bfa` began on the hosted Chromium repair and
+was deliberately cancelled after one in-process OpenRouter-backed preflight
+left the evidence ledger unchanged for more than ten minutes. No Chromium,
+yt-dlp, or ffmpeg child was active and the worker remained healthy, isolating
+the missing boundary to the SDK request. Remediation is in progress to enforce
+one configurable 60-second total deadline across each structured request and
+all of its retries before the final live attempt. The repair has now passed
+the complete closed gate with 252 backend tests, 12 frontend tests, one
+Playwright end-to-end test, the strict Next.js build, fresh PostgreSQL
+migrations, and the full local stack with zero live services contacted;
+Railway redeployment is pending.
+
 ## Implementation checklist
 
 | Area | Status | Notes |
@@ -178,7 +191,25 @@ The niche-finding accuracy expansion, keyless live path, Deepgram/selective-film
 Required implementation files, fixtures, tests, scripts, UI, and docs have been written. Live sources are gated from closed mode.
 
 ### Closed test
-`CLOSED_TEST_GREEN — CURRENT CHROMIUM VIDEO-PAGE REMEDIATION`
+`CLOSED_TEST_GREEN — CURRENT OPENROUTER DEADLINE REMEDIATION`
+
+Current OpenRouter deadline remediation verification record:
+- command: `PATH=/home/stanley/niche_finder/.venv/bin:/home/stanley/.nvm/versions/node/v20.19.4/bin:$PATH make closed-test`;
+- date: `2026-08-31`;
+- result: `252 Python tests passed; frontend smoke passed; 12 Vitest tests
+  passed; strict Next.js 15 production build/type checking passed; fresh
+  PostgreSQL migrations through 0009 passed; PostgreSQL, Redis, FastAPI, ARQ,
+  fixture, and Next.js boundaries passed; Chromium fixture-site probe passed;
+  1 full-stack Playwright UI submission/report/candidate/evidence E2E passed;
+  live services contacted 0`;
+- the OpenRouter SDK receives the configured timeout and one application-level
+  total deadline covers every retry for a structured request;
+- a client coroutine that never returns is cancelled at that deadline rather
+  than holding an ARQ research job indefinitely;
+- Docker was unavailable in this WSL environment, so the strict local
+  six-process fallback verified the same service boundaries.
+
+Prior verified gate:
 
 Current Chromium video-page remediation verification record:
 - command: `PATH=/home/stanley/niche_finder/.venv/bin:/home/stanley/.nvm/versions/node/v20.19.4/bin:$PATH make closed-test`;
@@ -575,7 +606,10 @@ hosted run `cf477e6d-1b4b-42d3-9aeb-3b5595225059` verified that repair and then
 exposed a per-video yt-dlp bot challenge. Hosted run
 `6e9a4976-47c5-44a0-bbf4-46884e0626bd` verified the media partial-evidence
 repair and then isolated cumulative watch-page Chromium timeouts. The
-video-page remediation must pass the closed gate before the next live attempt.
+video-page remediation passed its hosted five-frame probe; run
+`87ade25c-371e-4046-80eb-af86be2a1bfa` then exposed an unbounded OpenRouter SDK
+wait, whose deadline remediation must pass the closed gate before the next live
+attempt.
 
 ## Current blockers
 None in the implementation or closed-mode product flow. Use `nvm use` before `make closed-test`; frontend dependencies and the exact Playwright Chromium revision are mandatory and validated. Docker is not integrated with this WSL environment, so the closed runner automatically boots fresh PostgreSQL, Redis, FastAPI, ARQ, fixture, and Next.js processes locally; the isolated Docker Compose path remains preferred and implemented. Live verification is in progress. A zero-key smoke requires Chromium, yt-dlp, ffmpeg, and network access; the recommended accurate run also configures OpenRouter and Deepgram, with the YouTube Data API and asset/trend providers optional.

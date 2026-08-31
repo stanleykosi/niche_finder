@@ -83,6 +83,8 @@ Chromium Worker   YouTube API Worker   AI Worker    Asset Connectors
 - Provider interface: `AIProvider`
 - Provider selection at startup: configured OpenRouter official SDK, then Ollama HTTP API, then the evidence-driven deterministic live provider; fixture modes use fake, explicit selection is strict, and there is no mid-run provider failover
 - Optional OpenRouter structured-output provider
+- One configurable total deadline per OpenRouter structured request, including
+  its bounded retries, so a stalled upstream cannot hold a run indefinitely
 - Deterministic fake provider for closed testing
 - Structured Pydantic outputs only
 - Embeddings provider interface
@@ -522,6 +524,7 @@ Every browser task must respect:
 - max channels
 - max tabs
 - max retry count
+- total OpenRouter structured-request deadline
 - max scroll iterations
 
 There must be no unbounded loop.

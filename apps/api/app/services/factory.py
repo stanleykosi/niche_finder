@@ -64,6 +64,7 @@ def create_ai_provider(settings: Settings):
                         http_referer=settings.openrouter_http_referer,
                         app_title=settings.openrouter_app_title,
                         max_retries=settings.openrouter_max_retries,
+                        request_timeout_seconds=settings.openrouter_request_timeout_seconds,
                     )
             elif provider_name == "ollama":
                 if settings.ollama_model:

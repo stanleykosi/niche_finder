@@ -157,6 +157,7 @@ def test_openrouter_provider_uses_structured_schema_without_network():
     assert result.niche == "Tests"
     assert captured["model"] == "openrouter/free"
     assert captured["stream"] is False
+    assert captured["timeout_ms"] == 60000
     assert captured["response_format"]["type"] == "json_schema"
     assert captured["provider"]["require_parameters"] is True
 
@@ -204,3 +205,22 @@ def test_openrouter_retries_transient_failure_then_returns_structured_output():
     provider = OpenRouterProvider(api_key="fixture-key", client=FakeClient(), max_retries=1)
     assert asyncio.run(provider.classify_niche("evidence", [])).niche == "Tests"
     assert FakeClient.chat.calls == 2
+
+
+def test_openrouter_structured_request_has_one_total_deadline():
+    class FakeChat:
+        async def send_async(self, **request):  # noqa: ARG002
+            await asyncio.Event().wait()
+
+    class FakeClient:
+        chat = FakeChat()
+
+    provider = OpenRouterProvider(
+        api_key="fixture-key",
+        client=FakeClient(),
+        max_retries=8,
+        request_timeout_seconds=.01,
+    )
+    import pytest
+    with pytest.raises(RuntimeError, match="total deadline"):
+        asyncio.run(provider.classify_niche("evidence", []))

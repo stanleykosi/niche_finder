@@ -41,6 +41,7 @@ class OpenRouterProvider:
         http_referer: str | None = None,
         app_title: str | None = None,
         max_retries: int = 3,
+        request_timeout_seconds: float = 60.0,
         client: Any | None = None,
     ) -> None:
         if not api_key:
@@ -51,6 +52,7 @@ class OpenRouterProvider:
         self.http_referer = http_referer
         self.app_title = app_title
         self.max_retries = max_retries
+        self.request_timeout_seconds = max(.001, float(request_timeout_seconds))
         if client is not None:
             self._client = client
             return
@@ -96,22 +98,44 @@ class OpenRouterProvider:
             # but the application never switches to Ollama/fake mid-run.
             "provider": {"require_parameters": True, "allow_fallbacks": True},
             "server_url": self.base_url,
+            "timeout_ms": int(self.request_timeout_seconds * 1_000),
         }
         if self.http_referer:
             request["http_referer"] = self.http_referer
         if self.app_title:
             request["x_open_router_title"] = self.app_title
         last_error: Exception | None = None
+        deadline = asyncio.get_running_loop().time() + self.request_timeout_seconds
         for attempt in range(self.max_retries + 1):
+            remaining = deadline - asyncio.get_running_loop().time()
+            if remaining <= 0:
+                raise RuntimeError(
+                    f"OpenRouter structured request exceeded its {self.request_timeout_seconds:g}-second total deadline"
+                ) from last_error
             try:
-                response = await self._client.chat.send_async(**request)
+                response = await asyncio.wait_for(
+                    self._client.chat.send_async(**request), timeout=remaining
+                )
                 content = _response_content(response)
                 return schema.model_validate(json.loads(content))
+            except TimeoutError as exc:
+                raise RuntimeError(
+                    f"OpenRouter structured request exceeded its {self.request_timeout_seconds:g}-second total deadline"
+                ) from exc
             except Exception as exc:
                 last_error = exc
                 if attempt >= self.max_retries or not _retryable(exc):
                     raise RuntimeError(f"OpenRouter structured request failed cleanly after {attempt + 1} attempt(s): {exc}") from exc
-                await asyncio.sleep(min(4.0, .35 * (2**attempt)))
+                delay = min(
+                    4.0,
+                    .35 * (2**attempt),
+                    max(0.0, deadline - asyncio.get_running_loop().time()),
+                )
+                if delay <= 0:
+                    raise RuntimeError(
+                        f"OpenRouter structured request exceeded its {self.request_timeout_seconds:g}-second total deadline"
+                    ) from exc
+                await asyncio.sleep(delay)
         raise RuntimeError(f"OpenRouter request failed: {last_error}")
 
     async def classify_niche(self, context: str, evidence_ids: list[str]) -> NicheClassification:
