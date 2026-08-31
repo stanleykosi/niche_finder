@@ -99,6 +99,20 @@ def test_artifact_manager_refuses_to_delete_managed_roots(tmp_path):
         manager.delete(manager.browser_root)
 
 
+def test_non_owner_cannot_initialize_or_operate_on_worker_storage(tmp_path):
+    settings = Settings(
+        app_mode=AppMode.PRODUCTION,
+        database_url=f"sqlite:///{tmp_path / 'control.db'}",
+        media_work_root=str(tmp_path / "runtime" / "worker_media"),
+        browser_profile_root=str(tmp_path / "runtime" / "worker_browser"),
+    )
+    manager = RuntimeArtifactManager(settings, storage_owner=False)
+    assert not manager.media_root.exists()
+    assert not manager.browser_root.exists()
+    with pytest.raises(RuntimeError, match="mounted storage"):
+        manager.cleanup_expired()
+
+
 def test_raw_video_is_deleted_only_after_transcript_and_frames_are_extracted(tmp_path):
     settings, repository, manager = setup(tmp_path, deepgram_api_key="fixture-key")
     analyzer = DeepgramVideoAnalyzer(settings, manager)

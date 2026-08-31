@@ -97,6 +97,69 @@ def test_closed_service_installs_network_guard(tmp_path, monkeypatch):
     assert installed == [True]
 
 
+def test_configured_vercel_origin_passes_cors_preflight(tmp_path):
+    origin = "https://niche-intel.vercel.app"
+    app = create_app(Settings(
+        app_mode=AppMode.CLOSED_TEST,
+        database_url=f"sqlite:///{tmp_path / 'cors.db'}",
+        cors_allowed_origins=(origin,),
+    ))
+
+    async def exercise():
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+            response = await client.options(
+                "/api/research-runs",
+                headers={
+                    "Origin": origin,
+                    "Access-Control-Request-Method": "GET",
+                },
+            )
+            assert response.status_code == 200
+            assert response.headers["access-control-allow-origin"] == origin
+
+    asyncio.run(exercise())
+
+
+def test_non_closed_api_reports_worker_storage_without_touching_local_artifact_roots(
+    tmp_path,
+    monkeypatch,
+):
+    media_root = tmp_path / "runtime" / "worker_media"
+    browser_root = tmp_path / "runtime" / "worker_browser"
+    expected = {
+        "status_source": "worker",
+        "observed_at": "2026-08-31T12:00:00+00:00",
+        "usage_bytes": 321,
+    }
+
+    async def worker_status(redis_url):
+        assert redis_url == "redis://shared/0"
+        return expected
+
+    monkeypatch.setattr(routes, "read_worker_storage_status", worker_status)
+    app = create_app(Settings(
+        app_mode=AppMode.DEVELOPMENT,
+        database_url=f"sqlite:///{tmp_path / 'storage-control.db'}",
+        redis_url="redis://shared/0",
+        media_work_root=str(media_root),
+        browser_profile_root=str(browser_root),
+    ))
+    assert not media_root.exists()
+    assert not browser_root.exists()
+
+    async def exercise():
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+            response = await client.get("/api/system/storage")
+            assert response.status_code == 200
+            assert response.json() == expected
+
+    asyncio.run(exercise())
+    assert not media_root.exists()
+    assert not browser_root.exists()
+
+
 def test_non_closed_request_repository_session_is_closed(tmp_path):
     assert inspect.isasyncgenfunction(routes.repo)
     app = create_app(Settings(app_mode=AppMode.DEVELOPMENT, ai_provider="fake", database_url=f"sqlite:///{tmp_path / 'sessions.db'}"))

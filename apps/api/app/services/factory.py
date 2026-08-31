@@ -82,7 +82,12 @@ def create_ai_provider(settings: Settings):
     raise RuntimeError(f"Configured AI provider {settings.ai_provider!r} is unavailable; no runtime provider failover was attempted")
 
 
-def create_orchestrator(settings: Settings, repository: ResearchRepository) -> ResearchOrchestrator:
+def create_orchestrator(
+    settings: Settings,
+    repository: ResearchRepository,
+    *,
+    owns_runtime_storage: bool = True,
+) -> ResearchOrchestrator:
     quota = QuotaManager(
         settings.youtube_api_daily_search_budget,
         settings.youtube_api_reserved_search_calls,
@@ -90,8 +95,11 @@ def create_orchestrator(settings: Settings, repository: ResearchRepository) -> R
         settings.youtube_api_reserved_units,
         engine=repository.session.get_bind() if not settings.is_closed else None,
     )
-    artifact_manager = RuntimeArtifactManager(settings, repository)
-    artifact_manager.cleanup_expired()
+    artifact_manager = RuntimeArtifactManager(
+        settings,
+        repository,
+        storage_owner=owns_runtime_storage,
+    )
     if settings.app_mode in {AppMode.LIVE_TEST, AppMode.PRODUCTION}:
         if not settings.browser_executable_path:
             settings.browser_executable_path = _browser_executable(settings)

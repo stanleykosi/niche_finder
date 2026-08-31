@@ -9,7 +9,8 @@ from apps.api.app.storage.artifacts import RuntimeArtifactManager
 def main() -> int:
     settings = load_settings()
     database = Database(settings)
-    database.create_schema()
+    if settings.bootstrap_schema_on_startup:
+        database.create_schema()
     manager = RuntimeArtifactManager(settings, ResearchRepository(database.session()))
     result = manager.cleanup_expired()
     status = manager.status()

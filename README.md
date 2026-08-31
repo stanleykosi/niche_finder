@@ -80,6 +80,85 @@ make closed-test          # isolated full Compose stack + migrations + all unit/
 make live-smoke           # execute one bounded live research/report job; never run by closed-test
 ```
 
+## Vercel + Railway deployment
+
+The hosted layout preserves the canonical process boundaries:
+
+- Vercel runs only the Next.js application from `apps/web`.
+- Railway runs one public FastAPI service and one private ARQ worker from
+  `Dockerfile.api`.
+- Railway managed PostgreSQL and Redis are shared by the API and worker over
+  Railway's private network.
+- The worker owns browser/media execution. Attach a Railway volume at
+  `/app/.runtime` so the persistent browser profile and retained derived media
+  survive worker redeploys. Size it above the configured media ceiling plus
+  free-space floor (at least 10 GB with the example defaults).
+- Only the worker mounts that volume. It performs startup/terminal cleanup and
+  publishes measured usage to Redis for `GET /api/system/storage`; the API does
+  not sweep or inspect its isolated container filesystem.
+
+Configure the Railway services in this order:
+
+1. Provision managed PostgreSQL and Redis.
+2. Create the API service from the repository root with
+   `RAILWAY_DOCKERFILE_PATH=Dockerfile.api`, one replica, public networking,
+   and health check path `/health`. Configure the one-shot Railway Pre-deploy
+   Command as `python -m apps.api.app.db.migrate`, and set the Start Command to
+   `sh -c 'exec uvicorn apps.api.app.main:app --host 0.0.0.0 --port "$PORT"'`.
+   Railway must only promote the API revision when the pre-deploy migration
+   succeeds. The image's default command retains the same migration-first
+   behavior for direct Docker use.
+3. Create the private worker service from the same repository and Dockerfile.
+   Override its start command with
+   `arq workers.research.worker.WorkerSettings`; do not assign it a public
+   domain. Attach the `/app/.runtime` volume to this service. Worker startup
+   polls the shared Alembic revision and cannot dequeue a job until it matches
+   the code's migration head. A failed or missing API migration therefore
+   makes the worker exit without consuming queued research.
+4. Give both code services reference variables for the managed database URLs:
+   `DATABASE_URL=${{Postgres.DATABASE_URL}}` and
+   `REDIS_URL=${{Redis.REDIS_URL}}` (adjust service names if Railway generated
+   different names).
+
+For the first bounded hosted run, set these shared runtime variables on the API
+and worker. Keep credentials in Railway, never in the repository:
+
+```text
+APP_MODE=live_test
+BROWSER_ENABLED=true
+BROWSER_HEADLESS=true
+AI_PROVIDER=auto
+DATABASE_URL=${{Postgres.DATABASE_URL}}
+REDIS_URL=${{Redis.REDIS_URL}}
+BROWSER_PROFILE_ROOT=.runtime/browser_profiles
+MEDIA_WORK_ROOT=.runtime/media
+MIGRATION_WAIT_TIMEOUT_SECONDS=300
+MIGRATION_POLL_INTERVAL_SECONDS=2
+```
+
+Set the optional YouTube, OpenRouter, Deepgram, Pexels, Pixabay, and trend
+variables from the live configuration below when available. The API service
+also needs `CORS_ALLOWED_ORIGINS` set to the exact Vercel production origin,
+for example `https://niche-intel.vercel.app`. Preview origins can be listed as
+additional comma-separated values; the optional
+`CORS_ALLOWED_ORIGIN_REGEX` exists for intentionally enabling a controlled
+preview-domain pattern.
+
+Create the Vercel project with Root Directory `apps/web`. Its checked-in
+`vercel.json` pins the Next.js framework and deterministic install/build
+commands. Set this build-time variable for Production (and Preview when used),
+then redeploy whenever it changes:
+
+```text
+NEXT_PUBLIC_API_BASE_URL=https://<railway-api-domain>
+```
+
+The frontend variable is public by design and must contain only the API origin,
+never a credential. CORS is a browser boundary, not authentication; the current
+canonical MVP has no public-user authentication. Use Vercel/Railway access
+controls or keep the live-validation deployment short-lived until application
+authentication is explicitly added.
+
 Live smoke can run without API keys. At minimum it needs Chromium, `yt-dlp`,
 `ffmpeg`, and network access; it uses keyless public metadata, Commons search,
 and deterministic AI. The recommended accurate configuration is:
@@ -122,10 +201,11 @@ timestamps, selective-frame extraction, and deterministic media metrics are
 complete. A `finally` cleanup then deletes it on success, failure, or
 cancellation. Selected frames default to 24-hour retention; transcripts,
 timestamps, checksums, sizes, derived observations, and deletion state remain
-in the database. Startup and terminal-run cleanup remove expired artifacts,
-while `make cleanup-runtime` provides a manual sweep. Downloads are rejected
-before they start if the configured runtime ceiling or minimum free-space floor
-would be crossed. Each yt-dlp request receives the exact reserved byte ceiling,
+in the database. Worker startup and terminal-run cleanup remove expired
+artifacts, while `make cleanup-runtime` provides a manual sweep when invoked
+from the worker service shell (and therefore on its mounted volume). Downloads
+are rejected before they start if the configured runtime ceiling or minimum
+free-space floor would be crossed. Each yt-dlp request receives the exact reserved byte ceiling,
 uses a single bounded progressive download, and is monitored for actual output
 growth. Capacity is reserved atomically across worker processes and released
 only after raw cleanup and media subprocess reaping, so concurrent runs cannot
@@ -135,8 +215,11 @@ or `.runtime` directory; broad, equal, nested, or symlink-escaped roots are
 rejected before cleanup can run. Raw deletion is unconditional; configure derived retention
 and storage bounds with `MEDIA_DERIVED_RETENTION_HOURS`, `MEDIA_MAX_STORAGE_GB`,
 `MEDIA_MIN_FREE_DISK_GB`, `BROWSER_ARTIFACT_RETENTION_HOURS`, and
-`BROWSER_PROFILE_RETENTION_DAYS`. Storage state is exposed at
-`GET /api/system/storage`; per-run artifact history is available at
+`BROWSER_PROFILE_RETENTION_DAYS`. The worker publishes its filesystem
+measurement through shared Redis, and that state is exposed at
+`GET /api/system/storage`; the endpoint returns 503 until a worker has
+published a measurement rather than reporting the API container's unmounted
+disk. Per-run artifact history is available at
 `GET /api/research-runs/{run_id}/artifacts`.
 
 In keyless mode, yt-dlp traverses a bounded `/videos` feed for every retained

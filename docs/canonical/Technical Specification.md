@@ -614,6 +614,11 @@ Live video analysis uses Deepgram prerecorded STT (`nova-3`, English) over a bou
 - Reject a download before starting when its reserve would exceed the runtime
   storage ceiling or configured minimum free-space floor.
 - Artifact paths may only resolve beneath the configured media or browser roots.
+- In a split hosted deployment, only the worker process mounted to the runtime
+  volume may initialize, sweep, reserve, delete, or measure artifact storage.
+  It publishes timestamped storage measurements through shared Redis for the
+  API status endpoint. The API must report that worker measurement or an
+  explicit unavailable response; it must never inspect its isolated local disk.
 
 ### Shorts classification
 
@@ -731,6 +736,12 @@ queued task and submit an idempotent `research:<run_id>` ARQ job before
 returning HTTP 201. The research worker owns stage transitions and terminal
 task status. Cancellation aborts the queued/running job and records a cancelled
 task without requiring the request to wait for the research pipeline.
+
+Hosted schema changes run as a one-shot/pre-deploy Alembic migration. Before
+ARQ can dequeue any job, worker startup polls the shared database and requires
+its recorded Alembic revision set to equal the code's migration heads. A failed,
+missing, or still-running migration therefore prevents worker startup instead
+of exposing queued research to an old schema.
 
 ### Recommendation hard gates
 

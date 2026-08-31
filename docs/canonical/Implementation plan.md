@@ -553,6 +553,7 @@ Implement:
 - Makefile commands
 - Docker Compose
 - migrations entrypoint
+- one-shot hosted migration command and worker Alembic-head startup gate
 - worker start script
 - frontend start
 - seed demo
@@ -561,6 +562,7 @@ Implement:
 - README setup
 - environment docs
 - browser profile bootstrap instructions
+- worker-owned artifact cleanup and shared storage-status publication
 - troubleshooting
 
 Write all test files but do not run them yet.

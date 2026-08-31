@@ -21,6 +21,7 @@ from ..reports.engine import ReportEngine
 from ..repositories.store import ResearchRepository
 from ..services.jobs import abort_research_run, enqueue_research_run
 from ..services.health import collect_source_health
+from ..services.storage_status import read_worker_storage_status
 
 router = APIRouter(prefix="/api")
 TERMINAL_RUN_STATUSES = {"complete", "failed", "cancelled"}
@@ -204,7 +205,21 @@ async def quota(request: Request) -> dict[str, Any]:
 
 @router.get("/system/storage")
 async def storage_status(request: Request) -> dict[str, Any]:
-    return request.app.state.orchestrator.artifacts.status()
+    if request.app.state.settings.is_closed:
+        return {
+            **request.app.state.orchestrator.artifacts.status(),
+            "status_source": "api_closed_test",
+        }
+    try:
+        result = await read_worker_storage_status(request.app.state.settings.redis_url)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=503,
+            detail="worker storage status is unavailable",
+        ) from exc
+    if result is None:
+        raise HTTPException(status_code=503, detail="worker storage status has not been published")
+    return result
 
 
 @router.get("/research-runs/{run_id}/artifacts")

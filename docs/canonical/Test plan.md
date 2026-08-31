@@ -433,6 +433,13 @@ generation stops at the query bound, direct video/channel endpoints reject
 blank, external, and wrong-resource URLs, Chromium channel discovery includes
 rich/grid title links, and a 46–90-day major outlier cannot enter any UI or API
 collection labelled current.
+Deployment-boundary regressions additionally prove that file-backed SQLite
+creates its configured parent before Alembic connects; an ARQ worker cannot
+complete startup against a revision below Alembic head; a one-shot Railway
+pre-deploy migration is documented independently from the worker command; and
+only the mounted worker initializes, cleans, measures, and publishes runtime
+artifact storage while the API reads the shared measurement without touching
+its isolated artifact roots.
 The live test is separate and never invoked by `make closed-test`.
 
 Command:

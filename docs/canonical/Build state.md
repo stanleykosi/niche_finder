@@ -13,9 +13,20 @@ This file is the execution ledger for Codex. The canonical source remains the do
 ## Overall
 `CLOSED_TEST_GREEN`
 
+Three-finding hosted migration/artifact/SQLite remediation is implemented and
+the complete closed gate is green. Worker startup is now gated on the shared
+database reaching Alembic head; artifact lifecycle and measurement are owned by
+the mounted worker and shared with the API through Redis; and Alembic prepares
+the configured SQLite parent before opening the database.
+
 Five-finding candidate allocation, channel discovery, request-bound, direct
 URL, and current-evidence remediation is implemented and the complete closed
 gate is green. Live verification remains separately gated and has not run.
+
+Vercel/Railway deployment preparation was completed on `2026-08-31`. The
+hosted boundary is Next.js on Vercel plus FastAPI, ARQ, managed PostgreSQL, and
+managed Redis on Railway. The complete closed gate is green after the changes;
+no hosting provider or live research source was contacted in this phase.
 
 ## Implementation checklist
 
@@ -24,7 +35,7 @@ gate is green. Live verification remains separately gated and has not run.
 | Repository bootstrap | COMPLETE | Root config, Compose, Makefile, Python and Next.js manifests |
 | Shared config/contracts | COMPLETE | Typed runtime gates, strict fixture/live AI separation, bounded raw seeds, resource-specific direct YouTube URLs, keyless aspect provenance, and Pydantic contracts |
 | Database models/migrations | COMPLETE | UUID schema, 64-bit counters, and batch-safe fresh plus existing SQLite/PostgreSQL upgrades through 0009 |
-| Runtime storage lifecycle | COMPLETE | Dedicated-root validation, raw finally-deletion, retention, artifact ledger, atomic cross-process reservations, reservation-sized yt-dlp limits, output monitoring, and cancellation-safe child reaping |
+| Runtime storage lifecycle | COMPLETE | Dedicated-root validation, worker-only mounted-filesystem ownership, Redis-published worker measurements, raw finally-deletion, retention, artifact ledger, atomic cross-process reservations, reservation-sized yt-dlp limits, output monitoring, and cancellation-safe child reaping |
 | Repositories | COMPLETE | Database-native conflict handling for shared channels/videos/snapshots/comments plus retry-idempotent run output |
 | YouTube API source | COMPLETE | Typed optional adapter, every-attempt quota accounting, 403 quota taxonomy, diagnostics, retries, and <=50-ID batching |
 | Keyless YouTube metadata | COMPLETE | Channel-feed isolation, sparse channel identity/title retention, canonical diagnostic URLs, typed failures, strict dates, and positive aspect validation |
@@ -56,6 +67,7 @@ gate is green. Live verification remains separately gated and has not run.
 | Niche-detail UI | COMPLETE | Media-safe detail route renders supporting channels/videos, filters major outliers to the current bucket, and renders synthesis risks, differentiation, critic output, and candidate-specific actions |
 | Evidence UI | COMPLETE | Source/timestamp/confidence ledger including browser transcripts, frames, and provenance |
 | Docker Compose | COMPLETE | Internally network-isolated Postgres, Redis, migrated API, healthy ARQ worker, frontend, fixture server, and optional Ollama profile |
+| Vercel/Railway deployment | COMPLETE | Vercel app-root config, one-shot Railway migration plus worker revision gate, Railway-compatible API image/port, hosted Postgres URL normalization, configurable CORS, worker-owned volume/status boundary, and deployment runbook verified by the complete closed gate |
 | Makefile/scripts | COMPLETE | Closed/live tooling plus a schema-valid Python seed-demo payload with no request on import |
 | README/environment docs | COMPLETE | Setup, live gate, evidence and safety docs |
 | Test fixtures | COMPLETE | Date-anchored API/browser/AI/assets plus rejection scenarios |
@@ -64,20 +76,60 @@ gate is green. Live verification remains separately gated and has not run.
 | Browser tests written | COMPLETE | Semantic fixture contract and bounded browser flow |
 | Frontend tests written | COMPLETE | Vitest contracts, static UI smoke, Playwright E2E specs |
 | E2E tests written | COMPLETE | Frontend dashboard path and full-system path |
-| Closed-test runner | COMPLETE | Implementation/precondition checks plus focused regressions are written; the complete gate is ready to run |
+| Closed-test runner | COMPLETE | Implementation/precondition checks plus focused regressions passed in the complete gate |
 | Live-smoke runner | COMPLETE | Explicit zero-key-capable live gate with schema-valid canonical thresholds plus bounded Chromium/API/analytics/AI/report execution and classified failures |
 
 ## Gates
 
 ### Implementation complete
-`YES — CURRENT REMEDIATION READY FOR CLOSED GATE`
+`YES — VERIFIED BY CURRENT CLOSED GATE`
 
 The niche-finding accuracy expansion, keyless live path, Deepgram/selective-filmstrip media analysis, multimodal clip validation, unified quota accounting, date-anchored fixtures, production code, tests, scripts, and canonical documentation are implemented.
 
 Required implementation files, fixtures, tests, scripts, UI, and docs have been written. Live sources are gated from closed mode.
 
 ### Closed test
-`CLOSED_TEST_GREEN — CURRENT FIVE-FINDING REMEDIATION`
+`CLOSED_TEST_GREEN — CURRENT THREE-FINDING DEPLOYMENT REMEDIATION`
+
+Current three-finding deployment remediation verification record:
+- command: `PATH=/home/stanley/niche_finder/.venv/bin:/home/stanley/.nvm/versions/node/v20.19.4/bin:$PATH make closed-test`;
+- date: `2026-08-31`;
+- result: `245 Python tests passed; frontend smoke passed; 12 Vitest tests
+  passed; strict Next.js 15 production build/type checking passed; fresh
+  PostgreSQL migrations through 0009 passed; PostgreSQL, Redis, FastAPI, ARQ,
+  fixture, and Next.js boundaries passed; Chromium fixture-site probe passed;
+  1 full-stack Playwright UI submission/report/candidate/evidence E2E passed;
+  live services contacted 0`;
+- Railway runs Alembic as an API pre-deploy command, while ARQ startup polls
+  the shared database and cannot dequeue until its revision equals code head;
+- non-closed API processes construct a non-owner artifact boundary that cannot
+  initialize, clean, reserve, delete, or measure worker storage;
+- worker startup and terminal jobs clean/measure the mounted filesystem and
+  publish timestamped status through shared Redis for the API endpoint;
+- the SQLite migration entrypoint creates the configured database parent, and
+  the image also contains `/app/runtime` for its built-in default;
+- focused deployment, storage-owner, and API-boundary regressions passed;
+- Docker was unavailable in this WSL environment, so the strict local
+  six-process fallback verified the same service boundaries;
+- live gate: not run.
+
+Prior verified gate:
+
+Vercel/Railway deployment-preparation verification record:
+- command: `PATH=/home/stanley/niche_finder/.venv/bin:/home/stanley/.nvm/versions/node/v20.19.4/bin:$PATH make closed-test`;
+- date: `2026-08-31`;
+- result: `239 Python tests passed; frontend smoke passed; 12 Vitest tests passed; strict Next.js 15 production build/type checking passed; fresh PostgreSQL migrations through 0009 passed; PostgreSQL, Redis, FastAPI, ARQ, fixture, and Next.js boundaries passed; Chromium fixture-site probe passed; 1 full-stack Playwright UI submission/report/candidate/evidence E2E passed; live services contacted 0`;
+- hosted behavior: plain Railway `postgresql://`/`postgres://` URLs select the
+  installed Psycopg 3 driver, Railway's injected `PORT` controls Uvicorn,
+  Alembic runs before the hosted API starts, and live PostgreSQL startup never
+  races the worker by implicitly creating an unstamped schema;
+- browser boundary: exact Vercel origins and an optional controlled origin
+  regex are runtime configuration, while `NEXT_PUBLIC_API_BASE_URL` is the
+  explicitly public Vercel build-time API origin;
+- service boundary: Vercel builds only `apps/web`; Railway uses one public API
+  service, one private ARQ worker, managed PostgreSQL/Redis references, and a
+  worker-mounted `/app/.runtime` volume;
+- live gate: not run.
 
 Current five-finding remediation implementation record:
 - authoritative clip validation uses a new bounded session for every retained

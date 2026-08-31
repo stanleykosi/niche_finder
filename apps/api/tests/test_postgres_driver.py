@@ -15,3 +15,14 @@ def test_compose_postgresql_url_has_installed_sync_driver():
     database = Database(settings)
     assert database.engine.dialect.driver == "psycopg"
     database.engine.dispose()
+
+
+def test_railway_postgresql_url_has_installed_sync_driver():
+    settings = Settings(
+        app_mode=AppMode.PRODUCTION,
+        database_url="postgresql://postgres:secret@postgres.railway.internal:5432/railway",
+    )
+    database = Database(settings)
+    assert database.engine.url.drivername == "postgresql+psycopg"
+    assert database.engine.dialect.driver == "psycopg"
+    database.engine.dispose()

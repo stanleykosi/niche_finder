@@ -74,6 +74,13 @@ class Settings(BaseModel):
     fixture_scenario: str = "strong"
     api_host: str = "0.0.0.0"
     api_port: int = 8000
+    migration_wait_timeout_seconds: float = Field(default=300.0, ge=0, le=3600)
+    migration_poll_interval_seconds: float = Field(default=2.0, gt=0, le=60)
+    cors_allowed_origins: tuple[str, ...] = (
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+    )
+    cors_allowed_origin_regex: str | None = None
 
     @field_validator("ai_provider")
     @classmethod
@@ -150,7 +157,17 @@ class Settings(BaseModel):
         """Use the sync SQLAlchemy driver for the compact MVP control plane."""
         if self.database_url.startswith("postgresql+asyncpg://"):
             return self.database_url.replace("postgresql+asyncpg://", "postgresql+psycopg://")
+        if self.database_url.startswith("postgresql://"):
+            return self.database_url.replace("postgresql://", "postgresql+psycopg://", 1)
+        if self.database_url.startswith("postgres://"):
+            return self.database_url.replace("postgres://", "postgresql+psycopg://", 1)
         return self.database_url
+
+    @property
+    def bootstrap_schema_on_startup(self) -> bool:
+        """Keep fixture convenience while requiring Alembic for hosted live databases."""
+        fixture_mode = self.app_mode in {AppMode.DEVELOPMENT, AppMode.CLOSED_TEST}
+        return fixture_mode or self.database_sync_url.startswith("sqlite")
 
     @classmethod
     def from_env(cls, environ: dict[str, str] | None = None) -> "Settings":
@@ -209,7 +226,16 @@ class Settings(BaseModel):
             "closed_test_block_network": _as_bool(env.get("CLOSED_TEST_BLOCK_NETWORK", "true")),
             "fixture_scenario": env.get("FIXTURE_SCENARIO", "strong"),
             "api_host": env.get("API_HOST", "0.0.0.0"),
-            "api_port": env.get("API_PORT", 8000),
+            "api_port": env.get("PORT", env.get("API_PORT", 8000)),
+            "migration_wait_timeout_seconds": env.get("MIGRATION_WAIT_TIMEOUT_SECONDS", 300),
+            "migration_poll_interval_seconds": env.get("MIGRATION_POLL_INTERVAL_SECONDS", 2),
+            "cors_allowed_origins": _as_csv(
+                env.get(
+                    "CORS_ALLOWED_ORIGINS",
+                    "http://localhost:3000,http://127.0.0.1:3000",
+                )
+            ),
+            "cors_allowed_origin_regex": env.get("CORS_ALLOWED_ORIGIN_REGEX") or None,
         }
         return cls.model_validate(values)
 
@@ -220,12 +246,28 @@ def _as_bool(value: Any) -> bool:
     return str(value).strip().lower() in {"1", "true", "yes", "on"}
 
 
+def _as_csv(value: Any) -> tuple[str, ...]:
+    if isinstance(value, (list, tuple)):
+        return tuple(str(item).strip() for item in value if str(item).strip())
+    return tuple(item.strip() for item in str(value).split(",") if item.strip())
+
+
 def load_settings() -> Settings:
     return Settings.from_env()
 
 
-def ensure_runtime_dirs(settings: Settings) -> None:
-    if settings.database_sync_url.startswith("sqlite"):
-        Path("runtime").mkdir(parents=True, exist_ok=True)
-    Path(settings.browser_profile_root).mkdir(parents=True, exist_ok=True)
-    Path(settings.media_work_root).mkdir(parents=True, exist_ok=True)
+def ensure_database_dir(settings: Settings) -> None:
+    """Create only a file-backed SQLite database's parent directory.
+
+    Artifact roots are intentionally initialized by the process that owns the
+    mounted runtime filesystem, not as a side effect of constructing an API
+    database connection.
+    """
+    if not settings.database_sync_url.startswith("sqlite"):
+        return
+    from sqlalchemy.engine import make_url
+
+    database_path = make_url(settings.database_sync_url).database
+    if not database_path or database_path == ":memory:":
+        return
+    Path(database_path).expanduser().parent.mkdir(parents=True, exist_ok=True)

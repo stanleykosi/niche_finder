@@ -47,6 +47,38 @@ def test_runtime_threshold_and_system_chromium_path_are_configurable():
     assert settings.ollama_max_retries == 4
 
 
+def test_hosted_runtime_parses_port_and_cors_configuration():
+    settings = Settings.from_env({
+        "PORT": "4321",
+        "MIGRATION_WAIT_TIMEOUT_SECONDS": "45",
+        "MIGRATION_POLL_INTERVAL_SECONDS": "0.5",
+        "CORS_ALLOWED_ORIGINS": "https://niche.example, https://preview.example ",
+        "CORS_ALLOWED_ORIGIN_REGEX": r"^https://.*\.vercel\.app$",
+    })
+    assert settings.api_port == 4321
+    assert settings.migration_wait_timeout_seconds == 45
+    assert settings.migration_poll_interval_seconds == 0.5
+    assert settings.cors_allowed_origins == (
+        "https://niche.example",
+        "https://preview.example",
+    )
+    assert settings.cors_allowed_origin_regex == r"^https://.*\.vercel\.app$"
+
+
+@pytest.mark.parametrize(
+    "database_url",
+    [
+        "postgresql://postgres:secret@postgres.railway.internal:5432/railway",
+        "postgres://postgres:secret@postgres.railway.internal:5432/railway",
+        "postgresql+asyncpg://postgres:secret@postgres.railway.internal:5432/railway",
+    ],
+)
+def test_hosted_postgres_urls_use_the_installed_psycopg_driver(database_url):
+    settings = Settings(app_mode=AppMode.LIVE_TEST, database_url=database_url)
+    assert settings.database_sync_url.startswith("postgresql+psycopg://")
+    assert settings.bootstrap_schema_on_startup is False
+
+
 def test_raw_media_deletion_has_no_feature_flag_bypass():
     settings = Settings.from_env({"MEDIA_DELETE_RAW_AFTER_ANALYSIS": "false"})
     assert not hasattr(settings, "media_delete_raw_after_analysis")

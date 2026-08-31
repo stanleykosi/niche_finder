@@ -48,7 +48,8 @@ def _failure_class(exc: Exception) -> str:
 async def _run(settings: Settings) -> dict[str, object]:
     request = _build_smoke_request(settings)
     database = Database(settings)
-    database.create_schema()
+    if settings.bootstrap_schema_on_startup:
+        database.create_schema()
     repository = ResearchRepository(database.session())
     orchestrator = create_orchestrator(settings, repository)
     run = repository.create_run(request)

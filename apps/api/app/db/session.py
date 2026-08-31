@@ -1,21 +1,18 @@
 from __future__ import annotations
 
-from pathlib import Path
-
 from sqlalchemy import create_engine, event
 from sqlalchemy.orm import Session, sessionmaker
 
-from ..core.config import Settings, ensure_runtime_dirs
+from ..core.config import Settings, ensure_database_dir
 from .base import Base
 from . import models  # noqa: F401 - register mapped tables
 
 
 class Database:
     def __init__(self, settings: Settings) -> None:
-        ensure_runtime_dirs(settings)
+        ensure_database_dir(settings)
         url = settings.database_sync_url
         if url.startswith("sqlite"):
-            Path("runtime").mkdir(parents=True, exist_ok=True)
             connect_args = {"check_same_thread": False}
         else:
             connect_args = {}

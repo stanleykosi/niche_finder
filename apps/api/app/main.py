@@ -18,14 +18,24 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         install_closed_network_guard()
     configure_logging()
     db = Database(settings)
-    db.create_schema()
+    if settings.bootstrap_schema_on_startup:
+        db.create_schema()
     app = FastAPI(title="YouTube Niche Intelligence Engine", version="0.1.0")
     app.state.settings = settings
     app.state.db = db
-    app.state.orchestrator = create_orchestrator(settings, ResearchRepository(db.session()))
+    app.state.orchestrator = create_orchestrator(
+        settings,
+        ResearchRepository(db.session()),
+        owns_runtime_storage=settings.is_closed,
+    )
+    if settings.is_closed:
+        # Closed runs execute in-process. Every queued runtime delegates this
+        # lifecycle operation to the mounted ARQ worker.
+        app.state.orchestrator.artifacts.cleanup_expired()
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
+        allow_origins=list(settings.cors_allowed_origins),
+        allow_origin_regex=settings.cors_allowed_origin_regex,
         allow_methods=["*"],
         allow_headers=["*"],
         expose_headers=["Link", "X-Total-Count", "X-Pagination-Limit", "X-Pagination-Offset"],

@@ -1,12 +1,19 @@
 """ARQ-compatible worker entry point; closed MVP runs synchronously through the API."""
 
 import asyncio
+import logging
 
 from apps.api.app.core.config import load_settings
 from apps.api.app.core.network import install_closed_network_guard
+from apps.api.app.db.schema_gate import wait_for_migrations
 from apps.api.app.db.session import Database
 from apps.api.app.repositories.store import ResearchRepository
 from apps.api.app.services.factory import create_orchestrator
+from apps.api.app.services.storage_status import publish_worker_storage_status
+from apps.api.app.storage.artifacts import RuntimeArtifactManager
+
+
+logger = logging.getLogger(__name__)
 
 
 async def run_research(ctx: dict, run_id: str) -> str:
@@ -43,6 +50,11 @@ async def run_research(ctx: dict, run_id: str) -> str:
         return run_id
     finally:
         repository.session.close()
+        if ctx.get("redis") is not None:
+            try:
+                await _publish_worker_storage(ctx, cleanup=False)
+            except Exception:
+                logger.exception("failed to publish worker storage status")
 
 
 def create_worker_context() -> dict:
@@ -50,12 +62,47 @@ def create_worker_context() -> dict:
     if settings.is_closed and settings.closed_test_block_network:
         install_closed_network_guard()
     db = Database(settings)
-    db.create_schema()
+    if settings.bootstrap_schema_on_startup:
+        db.create_schema()
     return {"settings": settings, "database": db}
 
 
+def _measure_worker_storage(ctx: dict, *, cleanup: bool) -> dict:
+    repository = ResearchRepository(ctx["database"].session())
+    try:
+        manager = RuntimeArtifactManager(ctx["settings"], repository, storage_owner=True)
+        if cleanup:
+            manager.cleanup_expired()
+        return manager.status()
+    finally:
+        repository.session.close()
+
+
+async def _publish_worker_storage(ctx: dict, *, cleanup: bool) -> None:
+    status = await asyncio.to_thread(_measure_worker_storage, ctx, cleanup=cleanup)
+    redis = ctx.get("redis")
+    if redis is None:
+        return
+    await publish_worker_storage_status(redis, status)
+
+
 async def startup(ctx: dict) -> None:
-    ctx.update(create_worker_context())
+    worker_context = create_worker_context()
+    settings = worker_context["settings"]
+    database = worker_context["database"]
+    try:
+        if not settings.bootstrap_schema_on_startup:
+            await asyncio.to_thread(
+                wait_for_migrations,
+                database.engine,
+                timeout_seconds=settings.migration_wait_timeout_seconds,
+                poll_interval_seconds=settings.migration_poll_interval_seconds,
+            )
+    except Exception:
+        database.engine.dispose()
+        raise
+    ctx.update(worker_context)
+    await _publish_worker_storage(ctx, cleanup=True)
 
 
 async def shutdown(ctx: dict) -> None:

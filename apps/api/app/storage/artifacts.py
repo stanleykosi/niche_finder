@@ -33,18 +33,27 @@ class DownloadReservation:
 
 
 class RuntimeArtifactManager:
-    def __init__(self, settings: Settings, repository: ResearchRepository | None = None) -> None:
+    def __init__(
+        self,
+        settings: Settings,
+        repository: ResearchRepository | None = None,
+        *,
+        storage_owner: bool = True,
+    ) -> None:
         self.settings = settings
         self.repository = repository
+        self.storage_owner = storage_owner
         self.media_root = Path(settings.media_work_root).resolve()
         self.browser_root = Path(settings.browser_profile_root).resolve()
         _validate_artifact_roots(self.media_root, self.browser_root)
-        self.media_root.mkdir(parents=True, exist_ok=True)
-        self.browser_root.mkdir(parents=True, exist_ok=True)
         self.control_root = self.media_root / ".control"
-        self.control_root.mkdir(parents=True, exist_ok=True)
+        if self.storage_owner:
+            self.media_root.mkdir(parents=True, exist_ok=True)
+            self.browser_root.mkdir(parents=True, exist_ok=True)
+            self.control_root.mkdir(parents=True, exist_ok=True)
 
     def run_workspace(self, run_id: str) -> dict[str, Path]:
+        self._require_storage_owner()
         safe_run_id = _safe_component(run_id)
         root = self.media_root / safe_run_id
         paths = {"root": root, "downloads": root / "downloads", "frames": root / "frames", "temporary": root / "temporary"}
@@ -53,6 +62,7 @@ class RuntimeArtifactManager:
         return paths
 
     def reserve_download(self, expected_bytes: int | None = None) -> DownloadReservation:
+        self._require_storage_owner()
         self.cleanup_expired()
         reserve = expected_bytes or self.settings.media_unknown_download_reserve_mb * 1024 * 1024
         if reserve <= 0:
@@ -72,6 +82,7 @@ class RuntimeArtifactManager:
             return DownloadReservation(token_path, reserve)
 
     def release_download(self, reservation: DownloadReservation | None) -> None:
+        self._require_storage_owner()
         if reservation is None:
             return
         resolved = reservation.token_path.resolve()
@@ -81,6 +92,7 @@ class RuntimeArtifactManager:
             resolved.unlink(missing_ok=True)
 
     def register(self, path: Path, artifact_type: str, run_id: str | None, retention_hours: int | None, metadata: dict[str, Any] | None = None) -> dict[str, Any]:
+        self._require_storage_owner()
         resolved = path.resolve()
         self._validate_managed_path(resolved)
         now = datetime.now(timezone.utc)
@@ -101,6 +113,7 @@ class RuntimeArtifactManager:
         return payload
 
     def delete(self, path: Path) -> int:
+        self._require_storage_owner()
         resolved = path.resolve()
         self._validate_managed_path(resolved)
         size = resolved.stat().st_size if resolved.is_file() else 0
@@ -113,6 +126,7 @@ class RuntimeArtifactManager:
         return size
 
     def cleanup_expired(self, now: datetime | None = None) -> CleanupResult:
+        self._require_storage_owner()
         observed = now or datetime.now(timezone.utc)
         deleted = reclaimed = directories = 0
         if self.repository is not None:
@@ -156,6 +170,7 @@ class RuntimeArtifactManager:
         return CleanupResult(deleted, reclaimed, directories)
 
     def cleanup_run_temporary(self, run_id: str) -> CleanupResult:
+        self._require_storage_owner()
         root = self.media_root / _safe_component(run_id)
         paths = {"downloads": root / "downloads", "temporary": root / "temporary"}
         deleted = reclaimed = 0
@@ -170,6 +185,7 @@ class RuntimeArtifactManager:
         return CleanupResult(deleted, reclaimed, 0)
 
     def status(self) -> dict[str, Any]:
+        self._require_storage_owner()
         usage = _directory_size(self.media_root, exclude_control=True)
         with self._reservation_lock():
             reserved = self._remove_stale_and_sum_reservations()
@@ -193,6 +209,12 @@ class RuntimeArtifactManager:
             raise ValueError(f"refusing to delete an artifact root: {path}")
         if not (_is_relative_to(path, self.media_root) or _is_relative_to(path, self.browser_root)):
             raise ValueError(f"refusing to manage artifact outside runtime roots: {path}")
+
+    def _require_storage_owner(self) -> None:
+        if not self.storage_owner:
+            raise RuntimeError(
+                "runtime artifact operations are restricted to the process with the mounted storage"
+            )
 
     @contextmanager
     def _reservation_lock(self) -> Any:
