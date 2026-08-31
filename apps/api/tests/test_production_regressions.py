@@ -196,7 +196,7 @@ def test_worker_context_has_no_shared_session_or_orchestrator(monkeypatch):
     monkeypatch.setattr("workers.research.worker.Database", DatabaseDouble)
     context = create_worker_context()
     assert set(context) == {"settings", "database"}
-    assert WorkerSettings.max_jobs == 2
+    assert WorkerSettings.max_jobs == 1
     assert WorkerSettings.allow_abort_jobs is True
 
 
@@ -220,6 +220,9 @@ def test_aborted_worker_job_finishes_cancelled_with_job_scoped_state(monkeypatch
         def get_run(self, run_id):
             assert run_id == run.id
             return run
+
+        def task_job(self, run_id):
+            return SimpleNamespace(attempts=0)
 
         def update_task_job(self, run_id, status, error=None, increment_attempt=False):
             self.task_updates.append((run_id, status, increment_attempt))
@@ -284,10 +287,13 @@ def test_nonterminal_worker_retry_replaces_partial_outputs_before_execution(monk
         def get_run(self, run_id):
             return run
 
-        def reset_run_outputs_for_retry(self, run_id):
+        def prepare_run_for_resume(self, run_id):
             events.append("outputs_reset")
             run.status = "queued"
             return run
+
+        def task_job(self, run_id):
+            return SimpleNamespace(attempts=1)
 
         def update_task_job(self, run_id, status, error=None, increment_attempt=False):
             events.append(f"task_{status}")

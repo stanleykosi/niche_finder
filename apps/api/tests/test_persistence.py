@@ -97,7 +97,7 @@ def test_fuller_video_enrichment_refreshes_all_normalized_metadata(tmp_path):
     assert preserved.thumbnails == enriched.thumbnails
 
 
-def test_recoverable_retry_atomically_removes_partial_run_outputs(tmp_path):
+def test_recoverable_retry_preserves_checkpoints_and_rebuilds_only_derived_outputs(tmp_path):
     db = Database(Settings(app_mode=AppMode.CLOSED_TEST, database_url=f"sqlite:///{tmp_path / 'retry.db'}"))
     db.create_schema()
     repository = ResearchRepository(db.session())
@@ -132,9 +132,9 @@ def test_recoverable_retry_atomically_removes_partial_run_outputs(tmp_path):
     })
     reset = repository.reset_run_outputs_for_retry(run.id)
     assert reset.status == "queued"
-    assert reset.started_at is None and reset.completed_at is None and reset.failure_reason is None
-    assert repository.get_observations(run.id) == []
-    assert repository.get_evidence(run.id) == []
+    assert reset.started_at is not None and reset.completed_at is None and reset.failure_reason is None
+    assert len(repository.get_observations(run.id)) == 1
+    assert len(repository.get_evidence(run.id)) == 1
     assert repository.get_candidates(run.id) == []
     assert repository.session.scalar(select(func.count()).select_from(FormatCluster)) == 0
     assert repository.session.scalar(select(func.count()).select_from(ViralMechanismAnalysis)) == 0
@@ -219,3 +219,23 @@ def test_shared_channel_and_video_upserts_use_database_conflict_identity(tmp_pat
     video_b = second.upsert_video(video_record, channel_b)
     assert channel_a.id == channel_b.id
     assert video_a.id == video_b.id
+
+
+def test_pipeline_checkpoint_upserts_privately_and_survives_resume(tmp_path):
+    db = Database(Settings(app_mode=AppMode.CLOSED_TEST, database_url=f"sqlite:///{tmp_path / 'checkpoint.db'}"))
+    db.create_schema()
+    repository = ResearchRepository(db.session())
+    run = repository.create_run(ResearchRunCreate(seeds=["storytelling"]))
+    first = repository.save_checkpoint(
+        run.id, "video_complete:video-1", {"version": 1}, "first checkpoint"
+    )
+    second = repository.save_checkpoint(
+        run.id, "video_complete:video-1", {"version": 2}, "updated checkpoint"
+    )
+    repository.transition(run, "failed", "fixture interruption")
+    repository.prepare_run_for_resume(run.id)
+
+    assert first.id == second.id
+    assert repository.get_checkpoint(run.id, "video_complete:video-1") == {"version": 2}
+    assert repository.get_evidence(run.id) == []
+    assert len(repository.get_evidence(run.id, include_checkpoints=True)) == 1

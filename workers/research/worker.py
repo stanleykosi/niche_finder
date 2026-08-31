@@ -9,6 +9,7 @@ from apps.api.app.db.schema_gate import wait_for_migrations
 from apps.api.app.db.session import Database
 from apps.api.app.repositories.store import ResearchRepository
 from apps.api.app.services.factory import create_orchestrator
+from apps.api.app.services.jobs import research_job_id
 from apps.api.app.services.storage_status import publish_worker_storage_status
 from apps.api.app.storage.artifacts import RuntimeArtifactManager
 
@@ -24,12 +25,13 @@ async def run_research(ctx: dict, run_id: str) -> str:
         run = repository.get_run(run_id)
         if run is None:
             raise ValueError(f"unknown run {run_id}")
-        if run.status in {"complete", "failed", "cancelled"}:
+        if run.status in {"complete", "cancelled"}:
             repository.update_task_job(run_id, run.status, run.failure_reason)
             return run_id
-        retrying = run.status != "queued"
+        task = repository.task_job(run_id)
+        retrying = run.status != "queued" or bool(task and task.attempts > 0)
         if retrying:
-            run = repository.reset_run_outputs_for_retry(run_id)
+            run = repository.prepare_run_for_resume(run_id)
         repository.update_task_job(run_id, "running", increment_attempt=True)
         try:
             orchestrator = create_orchestrator(ctx["settings"], repository)
@@ -103,6 +105,53 @@ async def startup(ctx: dict) -> None:
         raise
     ctx.update(worker_context)
     await _publish_worker_storage(ctx, cleanup=True)
+    await _recover_interrupted_runs(ctx)
+
+
+async def _recover_interrupted_runs(ctx: dict) -> None:
+    """Requeue work left active when the single Railway worker restarted."""
+    redis = ctx.get("redis")
+    if redis is None:
+        return
+    repository = ResearchRepository(ctx["database"].session())
+    try:
+        recoverable = repository.recoverable_runs()
+        for run in recoverable:
+            task = repository.ensure_task_job(run.id)
+            next_attempt = max(1, task.attempts + 1)
+            if run.status == "queued":
+                from arq.jobs import Job
+
+                current_attempt = max(1, task.attempts)
+                job_ids = [research_job_id(run.id, current_attempt), f"research:{run.id}"]
+                queued = False
+                for job_id in job_ids:
+                    try:
+                        status = await Job(job_id, redis).status()
+                    except Exception:
+                        continue
+                    status_value = getattr(status, "value", str(status)).lower()
+                    if status_value in {"queued", "deferred"}:
+                        queued = True
+                        break
+                if queued:
+                    continue
+            await redis.enqueue_job(
+                "run_research",
+                run.id,
+                _job_id=research_job_id(run.id, next_attempt),
+            )
+            repository.update_task_job(run.id, "queued")
+            logger.warning(
+                "requeued interrupted research run",
+                extra={
+                    "research_run_id": run.id,
+                    "stage": run.status,
+                    "attempt": next_attempt,
+                },
+            )
+    finally:
+        repository.session.close()
 
 
 async def shutdown(ctx: dict) -> None:
@@ -118,10 +167,13 @@ class WorkerSettings:
     on_startup = startup
     on_shutdown = shutdown
     redis_settings = RedisSettings.from_dsn(load_settings().redis_url)
-    max_jobs = 2
+    # Chromium, embeddings and video analysis are intentionally serialized in
+    # this 2 GB worker. Parallel runs multiply memory, not throughput.
+    max_jobs = 1
+    max_tries = 5
     allow_abort_jobs = True
-    job_timeout = 3600
-    keep_result = 300
+    job_timeout = 14400
+    keep_result = 600
 
 
 if __name__ == "__main__":

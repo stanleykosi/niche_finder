@@ -762,10 +762,23 @@ including `#video-title-link`, in addition to search and Shorts renderers.
 
 Closed-test runs execute synchronously in the API process to keep the fixture
 gate self-contained. Development, live-test, and production requests persist a
-queued task and submit an idempotent `research:<run_id>` ARQ job before
+queued task and submit an idempotent `research:<run_id>:attempt:<n>` ARQ job before
 returning HTTP 201. The research worker owns stage transitions and terminal
 task status. Cancellation aborts the queued/running job and records a cancelled
 task without requiring the request to wait for the research pipeline.
+
+Every non-terminal run is resumable under the same research-run ID. The
+orchestrator persists versioned checkpoints after discovery, expanded
+enrichment, every completed video, each structured AI operation, candidate
+asset validation, comparative analysis, and final synthesis. A retry keeps
+search/browser/media/evidence records, deletes only incomplete derived
+relational output, and replays unfinished steps. Worker startup requeues runs
+left active by a container restart, while `POST /api/research-runs/{id}/resume`
+allows an operator to resume a failed run after a code/configuration repair.
+Completed model responses remain schema-validated when loaded from a
+checkpoint. Raw video is still deleted in the per-video `finally` boundary;
+checkpoint state contains normalized metadata and derived observations, never
+the downloaded media file.
 
 Hosted schema changes run as a one-shot/pre-deploy Alembic migration. Before
 ARQ can dequeue any job, worker startup polls the shared database and requires
@@ -953,6 +966,7 @@ POST   /api/research-runs
 GET    /api/research-runs
 GET    /api/research-runs/{id}
 POST   /api/research-runs/{id}/cancel
+POST   /api/research-runs/{id}/resume
 GET    /api/research-runs/{id}/candidates
 GET    /api/research-runs/{id}/evidence
 GET    /api/research-runs/{id}/report

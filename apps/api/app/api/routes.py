@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from collections.abc import AsyncGenerator
 from typing import Annotated, Any
 from uuid import UUID
@@ -25,6 +26,7 @@ from ..services.storage_status import read_worker_storage_status
 
 router = APIRouter(prefix="/api")
 TERMINAL_RUN_STATUSES = {"complete", "failed", "cancelled"}
+logger = logging.getLogger(__name__)
 
 
 async def repo(request: Request) -> AsyncGenerator[ResearchRepository, None]:
@@ -61,9 +63,13 @@ async def create_research_run(payload: ResearchRunCreate, request: Request, repo
     }
     repository.session.commit()
     if not request.app.state.settings.is_closed:
-        repository.ensure_task_job(run.id)
+        task = repository.ensure_task_job(run.id)
         try:
-            await enqueue_research_run(request.app.state.settings.redis_url, run.id)
+            await enqueue_research_run(
+                request.app.state.settings.redis_url,
+                run.id,
+                attempt=max(1, task.attempts + 1),
+            )
         except NicheIntelError as exc:
             repository.update_task_job(run.id, "failed", exc.message)
             repository.transition(run, "failed", exc.message)
@@ -119,12 +125,63 @@ async def cancel_research_run(run_id: UUID, request: Request, repository: Reposi
     if run.status in TERMINAL_RUN_STATUSES:
         return summary(run, request)
     if not request.app.state.settings.is_closed:
-        await abort_research_run(request.app.state.settings.redis_url, run.id)
+        task = repository.task_job(run.id)
+        try:
+            await abort_research_run(
+                request.app.state.settings.redis_url,
+                run.id,
+                attempt=max(1, task.attempts if task is not None else 1),
+            )
+        except Exception:
+            # The queue entry may already be gone after a container restart.
+            # Database cancellation remains authoritative and the orchestrator
+            # checks it between durable steps.
+            logger.exception("queue abort failed; applying durable run cancellation")
         run, cancelled = repository.cancel_run_if_active(run.id, "research run cancelled by user")
         if cancelled:
             repository.update_task_job(run.id, "cancelled")
     else:
         request.app.state.orchestrator.cancel(run)
+    return summary(run, request)
+
+
+@router.post("/research-runs/{run_id}/resume", response_model=ResearchRunSummary)
+async def resume_research_run(run_id: UUID, request: Request, repository: RepositoryDependency) -> ResearchRunSummary:
+    run = repository.get_run(run_id)
+    if run is None:
+        raise HTTPException(status_code=404, detail="research run not found")
+    if run.status in {"complete", "cancelled"}:
+        raise HTTPException(status_code=409, detail=f"a {run.status} run cannot be resumed")
+    if request.app.state.settings.is_closed:
+        run = repository.prepare_run_for_resume(run.id)
+        try:
+            await request.app.state.orchestrator.execute(run)
+        except NicheIntelError as exc:
+            raise HTTPException(status_code=422, detail={"code": exc.code.value, "message": exc.message}) from exc
+        return summary(run, request)
+
+    task = repository.ensure_task_job(run.id)
+    if run.status not in TERMINAL_RUN_STATUSES:
+        try:
+            await abort_research_run(
+                request.app.state.settings.redis_url,
+                run.id,
+                attempt=max(1, task.attempts),
+            )
+        except Exception:
+            logger.exception("stale queue entry could not be aborted before resume")
+    run = repository.prepare_run_for_resume(run.id)
+    repository.update_task_job(run.id, "queued")
+    try:
+        await enqueue_research_run(
+            request.app.state.settings.redis_url,
+            run.id,
+            attempt=max(1, task.attempts + 1),
+        )
+    except NicheIntelError as exc:
+        repository.update_task_job(run.id, "failed", exc.message)
+        repository.transition(run, "failed", exc.message)
+        raise HTTPException(status_code=503, detail={"code": exc.code.value, "message": exc.message}) from exc
     return summary(run, request)
 
 

@@ -117,7 +117,8 @@ class OpenRouterProvider:
                     self._client.chat.send_async(**request), timeout=remaining
                 )
                 content = _response_content(response)
-                return schema.model_validate(json.loads(content))
+                decoded = json.loads(content)
+                return schema.model_validate(_normalize_structured_payload(schema, decoded))
             except TimeoutError as exc:
                 raise RuntimeError(
                     f"OpenRouter structured request exceeded its {self.request_timeout_seconds:g}-second total deadline"
@@ -212,4 +213,58 @@ def _local_image_data_url(ref: str) -> str | None:
 
 def _retryable(exc: Exception) -> bool:
     value = str(exc).lower()
-    return any(token in value for token in ("408", "409", "429", "500", "502", "503", "504", "timeout", "temporar", "rate limit", "connection"))
+    return any(token in value for token in (
+        "408", "409", "429", "500", "502", "503", "504", "timeout",
+        "temporar", "rate limit", "connection", "validation error",
+        "json decode", "expecting value", "no choices", "empty assistant",
+    ))
+
+
+def _normalize_structured_payload(schema: type[Any], payload: Any) -> Any:
+    """Normalize a provider-valid idea list into the requested object schema.
+
+    Some OpenRouter upstreams honor the item fields but return the root of
+    ``IdeaGeneration`` as a JSON array.  The information is complete, so this
+    deterministic adapter preserves it instead of failing or asking a second
+    model to reinterpret it. Other schemas remain strict and unchanged.
+    """
+    if schema is not IdeaGeneration:
+        return payload
+    if isinstance(payload, dict):
+        raw_ideas = payload.get("ideas")
+        if not isinstance(raw_ideas, list) or not any(isinstance(item, dict) for item in raw_ideas):
+            return payload
+        base = payload
+    elif isinstance(payload, list):
+        raw_ideas = payload
+        base = {}
+    else:
+        return payload
+
+    ideas: list[str] = []
+    repeatable_formats = [str(item) for item in base.get("repeatable_formats", []) if str(item).strip()]
+    series_suggestions = [str(item) for item in base.get("series_suggestions", []) if str(item).strip()]
+    for item in raw_ideas:
+        if isinstance(item, str) and item.strip():
+            ideas.append(item.strip())
+            continue
+        if not isinstance(item, dict):
+            continue
+        idea = next((
+            str(item[key]).strip()
+            for key in ("idea", "title", "concept", "name")
+            if item.get(key) is not None and str(item[key]).strip()
+        ), "")
+        if idea:
+            ideas.append(idea)
+        for key in ("repeatable_format", "format"):
+            if item.get(key) is not None and str(item[key]).strip():
+                repeatable_formats.append(str(item[key]).strip())
+        for key in ("series_suggestion", "series"):
+            if item.get(key) is not None and str(item[key]).strip():
+                series_suggestions.append(str(item[key]).strip())
+    return {
+        "ideas": list(dict.fromkeys(ideas))[:30],
+        "repeatable_formats": list(dict.fromkeys(repeatable_formats)),
+        "series_suggestions": list(dict.fromkeys(series_suggestions)),
+    }

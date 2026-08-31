@@ -8,7 +8,8 @@ COPY apps ./apps
 COPY workers ./workers
 COPY fixtures ./fixtures
 COPY scripts ./scripts
-RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg chromium && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg chromium tini && rm -rf /var/lib/apt/lists/*
 RUN pip install --no-cache-dir -e '.[openrouter,media]'
 RUN mkdir -p /app/runtime
+ENTRYPOINT ["/usr/bin/tini", "--"]
 CMD ["sh", "-c", "python -m apps.api.app.db.migrate && exec uvicorn apps.api.app.main:app --host 0.0.0.0 --port \"${PORT:-${API_PORT:-8000}}\""]

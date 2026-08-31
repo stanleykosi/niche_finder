@@ -157,7 +157,7 @@ def test_openrouter_provider_uses_structured_schema_without_network():
     assert result.niche == "Tests"
     assert captured["model"] == "openrouter/free"
     assert captured["stream"] is False
-    assert captured["timeout_ms"] == 60000
+    assert captured["timeout_ms"] == 300000
     assert captured["response_format"]["type"] == "json_schema"
     assert captured["provider"]["require_parameters"] is True
 
@@ -205,6 +205,24 @@ def test_openrouter_retries_transient_failure_then_returns_structured_output():
     provider = OpenRouterProvider(api_key="fixture-key", client=FakeClient(), max_retries=1)
     assert asyncio.run(provider.classify_niche("evidence", [])).niche == "Tests"
     assert FakeClient.chat.calls == 2
+
+
+def test_openrouter_normalizes_provider_idea_array_without_losing_fields():
+    class FakeChat:
+        async def send_async(self, **request):
+            return {"choices": [{"message": {"content": json.dumps([
+                {"idea": "Monthly emotional story", "repeatable_format": "narrated arc", "series_suggestion": "One per month"},
+                {"title": "Unexpected reunion", "format": "narrated arc"},
+            ])}}]}
+
+    class FakeClient:
+        chat = FakeChat()
+
+    provider = OpenRouterProvider(api_key="fixture-key", client=FakeClient())
+    result = asyncio.run(provider.generate_ideas("storytelling evidence", []))
+    assert result.ideas == ["Monthly emotional story", "Unexpected reunion"]
+    assert result.repeatable_formats == ["narrated arc"]
+    assert result.series_suggestions == ["One per month"]
 
 
 def test_openrouter_structured_request_has_one_total_deadline():

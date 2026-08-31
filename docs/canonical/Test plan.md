@@ -222,7 +222,12 @@ Expected separate assessments.
 
 ### Scenario F — Cancellation/resume
 - cancel active run
-- idempotent resume/retry where designed
+- resume a failed run under the same ID
+- preserve discovery, per-video browser/media observations, evidence IDs, and
+  versioned checkpoints
+- skip completed video and structured-AI steps while replaying unfinished work
+- requeue an active orphan automatically when the hosted worker restarts
+- keep raw-video deletion and download-reservation release unconditional
 
 ## 8. Browser integration test
 Run Chromium against the local fixture site.

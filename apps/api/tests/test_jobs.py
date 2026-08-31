@@ -23,6 +23,6 @@ def test_arq_submission_is_idempotent_and_closes_pool():
         return pool
 
     job_id = asyncio.run(enqueue_research_run("redis://fixture", "run-1", factory))
-    assert job_id == "research:run-1"
-    assert pool.request == ("run_research", "run-1", {"_job_id": "research:run-1"})
+    assert job_id == "research:run-1:attempt:1"
+    assert pool.request == ("run_research", "run-1", {"_job_id": "research:run-1:attempt:1"})
     assert pool.closed is True

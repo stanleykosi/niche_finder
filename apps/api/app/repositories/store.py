@@ -89,8 +89,15 @@ class ResearchRepository:
     def count_runs(self) -> int:
         return int(self.session.scalar(select(func.count(ResearchRun.id))) or 0)
 
-    def reset_run_outputs_for_retry(self, run_id: str | UUID) -> ResearchRun:
-        """Atomically replace partial run-scoped output before a recoverable retry."""
+    def prepare_run_for_resume(self, run_id: str | UUID) -> ResearchRun:
+        """Reset only derived relational output while preserving durable evidence.
+
+        Discovery observations, per-video enrichment, browser/media observations,
+        evidence, and pipeline checkpoints are the expensive durable work of a
+        run.  They must survive a worker restart.  Derived rows are cheap to
+        rebuild and may be internally inconsistent when execution stopped in the
+        middle of analysis, so those rows alone are replaced on resume.
+        """
         normalized_id = str(run_id)
         run = self.get_run(normalized_id)
         if run is None:
@@ -106,19 +113,25 @@ class ResearchRepository:
             NicheCandidate,
             WinnerLoserComparison,
             OutlierResult,
-            EvidenceRecord,
-            BrowserMediaObservation,
-            SearchObservation,
-            SourceRoutingAudit,
             FormatCluster,
         ):
             self.session.execute(delete(model).where(model.research_run_id == normalized_id))
         run.status = "queued"
-        run.started_at = None
         run.completed_at = None
         run.failure_reason = None
         self.session.commit()
         return run
+
+    def reset_run_outputs_for_retry(self, run_id: str | UUID) -> ResearchRun:
+        """Backward-compatible alias for checkpoint-preserving resume."""
+        return self.prepare_run_for_resume(run_id)
+
+    def recoverable_runs(self) -> list[ResearchRun]:
+        return list(self.session.scalars(
+            select(ResearchRun)
+            .where(ResearchRun.status.in_({"queued", "planning", "discovering", "enriching", "analysing", "reporting"}))
+            .order_by(ResearchRun.created_at, ResearchRun.id)
+        ))
 
     def transition(self, run: ResearchRun, status: str, failure_reason: str | None = None) -> None:
         run.status = status
@@ -274,28 +287,33 @@ class ResearchRepository:
         self.session.commit()
 
     def add_browser_media(self, run_id: str, video_id: str, record: Any) -> BrowserMediaObservation:
-        item = BrowserMediaObservation(
-            id=new_id(),
-            research_run_id=run_id,
-            video_id=video_id,
-            source_profile=record.source_profile,
-            is_short_presentation=record.is_short_presentation,
-            visible_transcript=record.visible_transcript,
-            thumbnail_ref=record.thumbnail_ref,
-            frame_refs=record.frame_refs,
-            opening_visual_summary=record.opening_visual_summary,
-            caption_style=record.caption_style,
-            observable_structure=record.observable_structure,
-            feature_payload={
-                "first_spoken_line": record.first_spoken_line, "duration_seconds": record.duration_seconds,
-                "scene_change_count": record.scene_change_count, "average_shot_duration_seconds": record.average_shot_duration_seconds,
-                "reveal_timestamp_seconds": record.reveal_timestamp_seconds, "caption_density": record.caption_density,
-                "motion_score": record.motion_score, "pacing_score": record.pacing_score, "visual_features": record.visual_features,
-                "music_cue_count": record.music_cue_count, "editing_pattern": record.editing_pattern,
-            },
-            confidence=record.confidence,
-        )
-        self.session.add(item)
+        item = self.session.scalar(select(BrowserMediaObservation).where(
+            BrowserMediaObservation.research_run_id == run_id,
+            BrowserMediaObservation.video_id == video_id,
+        ).order_by(BrowserMediaObservation.observed_at.desc()))
+        if item is None:
+            item = BrowserMediaObservation(
+                id=new_id(), research_run_id=run_id, video_id=video_id,
+                source_profile=record.source_profile,
+            )
+            self.session.add(item)
+        item.source_profile = record.source_profile
+        item.is_short_presentation = record.is_short_presentation
+        item.visible_transcript = record.visible_transcript
+        item.thumbnail_ref = record.thumbnail_ref
+        item.frame_refs = record.frame_refs
+        item.opening_visual_summary = record.opening_visual_summary
+        item.caption_style = record.caption_style
+        item.observable_structure = record.observable_structure
+        item.observed_at = record.observed_at
+        item.feature_payload = {
+            "first_spoken_line": record.first_spoken_line, "duration_seconds": record.duration_seconds,
+            "scene_change_count": record.scene_change_count, "average_shot_duration_seconds": record.average_shot_duration_seconds,
+            "reveal_timestamp_seconds": record.reveal_timestamp_seconds, "caption_density": record.caption_density,
+            "motion_score": record.motion_score, "pacing_score": record.pacing_score, "visual_features": record.visual_features,
+            "music_cue_count": record.music_cue_count, "editing_pattern": record.editing_pattern,
+        }
+        item.confidence = record.confidence
         self.session.commit()
         return item
 
@@ -304,6 +322,66 @@ class ResearchRepository:
         self.session.add(item)
         self.session.commit()
         return item
+
+    def upsert_evidence(self, run_id: str, evidence: dict[str, Any]) -> EvidenceRecord:
+        """Persist one stable evidence item per run/type/source entity."""
+        entity_id = evidence.get("source_entity_id")
+        item = self.session.scalar(
+            select(EvidenceRecord)
+            .where(
+                EvidenceRecord.research_run_id == run_id,
+                EvidenceRecord.evidence_type == evidence["evidence_type"],
+                EvidenceRecord.source_entity_id == entity_id,
+            )
+            .order_by(EvidenceRecord.observed_at.desc())
+        )
+        if item is None:
+            return self.add_evidence(run_id, evidence)
+        for key, value in evidence.items():
+            setattr(item, key, value)
+        if "observed_at" not in evidence:
+            item.observed_at = utc_now()
+        self.session.commit()
+        return item
+
+    def evidence_item(
+        self,
+        run_id: str,
+        evidence_type: str,
+        source_entity_id: str | None,
+    ) -> EvidenceRecord | None:
+        return self.session.scalar(
+            select(EvidenceRecord)
+            .where(
+                EvidenceRecord.research_run_id == run_id,
+                EvidenceRecord.evidence_type == evidence_type,
+                EvidenceRecord.source_entity_id == source_entity_id,
+            )
+            .order_by(EvidenceRecord.observed_at.desc())
+        )
+
+    def save_checkpoint(
+        self,
+        run_id: str,
+        checkpoint_key: str,
+        state: dict[str, Any],
+        summary: str,
+    ) -> EvidenceRecord:
+        return self.upsert_evidence(run_id, {
+            "evidence_type": "pipeline_checkpoint",
+            "source_type": "deterministic",
+            "source_entity_id": checkpoint_key,
+            "payload": {"checkpoint_version": "pipeline-v1", "state": state},
+            "confidence": 1.0,
+            "human_readable_summary": summary,
+        })
+
+    def get_checkpoint(self, run_id: str, checkpoint_key: str) -> dict[str, Any] | None:
+        item = self.evidence_item(run_id, "pipeline_checkpoint", checkpoint_key)
+        if item is None or item.payload.get("checkpoint_version") != "pipeline-v1":
+            return None
+        state = item.payload.get("state")
+        return state if isinstance(state, dict) else None
 
     def add_routing_audit(self, run_id: str | None, task_type: str, source: str, reason: str, quota_delta: int = 0) -> None:
         self.session.add(SourceRoutingAudit(
@@ -345,8 +423,28 @@ class ResearchRepository:
     def get_candidates(self, run_id: str) -> list[NicheCandidate]:
         return list(self.session.scalars(select(NicheCandidate).where(NicheCandidate.research_run_id == run_id).order_by(NicheCandidate.rank)))
 
-    def get_evidence(self, run_id: str) -> list[EvidenceRecord]:
-        return list(self.session.scalars(select(EvidenceRecord).where(EvidenceRecord.research_run_id == run_id).order_by(EvidenceRecord.observed_at)))
+    def get_evidence(self, run_id: str, *, include_checkpoints: bool = False) -> list[EvidenceRecord]:
+        query = select(EvidenceRecord).where(EvidenceRecord.research_run_id == run_id)
+        if not include_checkpoints:
+            query = query.where(EvidenceRecord.evidence_type != "pipeline_checkpoint")
+        return list(self.session.scalars(query.order_by(EvidenceRecord.observed_at)))
+
+    def browser_media_rows(self, run_id: str) -> list[tuple[BrowserMediaObservation, str]]:
+        return list(self.session.execute(
+            select(BrowserMediaObservation, Video.youtube_video_id)
+            .join(Video, Video.id == BrowserMediaObservation.video_id)
+            .where(BrowserMediaObservation.research_run_id == run_id)
+            .order_by(BrowserMediaObservation.observed_at)
+        ).all())
+
+    def video_rows_for_run(self, run_id: str) -> list[tuple[Video, VideoSnapshot, Channel | None]]:
+        return list(self.session.execute(
+            select(Video, VideoSnapshot, Channel)
+            .join(VideoSnapshot, VideoSnapshot.video_id == Video.id)
+            .outerjoin(Channel, Channel.id == Video.channel_id)
+            .where(VideoSnapshot.research_run_id == run_id)
+            .order_by(VideoSnapshot.observed_at, Video.youtube_video_id)
+        ).all())
 
     def get_observations(self, run_id: str) -> list[SearchObservation]:
         return list(self.session.scalars(select(SearchObservation).where(SearchObservation.research_run_id == run_id).order_by(SearchObservation.result_position)))
@@ -395,6 +493,12 @@ class ResearchRepository:
             self.session.add(item)
             self.session.commit()
         return item
+
+    def task_job(self, run_id: str, stage: str = "research") -> TaskJob | None:
+        return self.session.scalar(select(TaskJob).where(
+            TaskJob.research_run_id == run_id,
+            TaskJob.stage == stage,
+        ))
 
     def update_task_job(self, run_id: str, status: str, error: str | None = None, increment_attempt: bool = False) -> None:
         item = self.ensure_task_job(run_id)

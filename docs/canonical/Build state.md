@@ -137,6 +137,28 @@ request remains bounded against a dead upstream, but its configurable default
 is now five minutes (with a thirty-minute validated upper range) so normal
 large structured generations can finish before the final live attempt.
 
+The subsequent hosted attempts exposed two independent durability faults. Run
+`e79d2381-d785-4ee7-bfb6-a17190faad90` persisted thirteen completed video
+observations before the 1 GB worker reached its memory ceiling; raw downloads
+had already been deleted sequentially and worker disk usage remained about
+0.12 GB, so this was memory pressure rather than a storage leak. Railway now
+provides the worker 2 GB. Replacement run
+`660496c9-4cab-44f0-8413-38cd6c2ee61c` then received a complete OpenRouter idea
+list at the JSON root instead of the requested object wrapper.
+
+Checkpoint/resume remediation is now implemented pending hosted verification.
+The destructive retry reset has been replaced with versioned evidence-backed
+checkpoints for discovery, expanded enrichment, each completed video, every
+structured AI step, candidate asset/trend work, comparisons, and final
+synthesis. Active runs are requeued after worker restart, failed runs have a
+same-ID resume endpoint, completed model/video work is replay-safe, and only
+incomplete derived relational rows are rebuilt. OpenRouter deterministically
+normalizes the observed root idea-list shape and retries other malformed
+structured responses within the existing five-minute total deadline. Worker
+concurrency is one, the ARQ job timeout is four hours, and `tini` is PID 1 for
+hosted child-process reaping. The thirteen persisted videos in run `e79d...`
+remain the intended resume source; they are not scheduled for re-download.
+
 ## Implementation checklist
 
 | Area | Status | Notes |

@@ -58,7 +58,7 @@ def test_direct_analysis_endpoints_reject_wrong_resource_types(tmp_path):
 def test_non_closed_api_returns_queued_run_without_executing_pipeline(tmp_path, monkeypatch):
     queued = []
 
-    async def fake_enqueue(redis_url, run_id):
+    async def fake_enqueue(redis_url, run_id, **kwargs):
         queued.append((redis_url, run_id))
         return f"research:{run_id}"
 
@@ -237,7 +237,7 @@ def test_cancelling_terminal_non_closed_run_preserves_history(tmp_path, monkeypa
     session.close()
     aborts = []
 
-    async def fake_abort(redis_url, run_id):
+    async def fake_abort(redis_url, run_id, **kwargs):
         aborts.append(run_id)
         return False
 
@@ -272,7 +272,7 @@ def test_cancellation_race_preserves_worker_terminal_commit(tmp_path, monkeypatc
     run_id = run.id
     setup_session.close()
 
-    async def finish_during_abort(redis_url, abort_run_id):
+    async def finish_during_abort(redis_url, abort_run_id, **kwargs):
         assert redis_url == settings.redis_url
         assert abort_run_id == run_id
         worker_session = app.state.db.session()
@@ -301,5 +301,63 @@ def test_cancellation_race_preserves_worker_terminal_commit(tmp_path, monkeypatc
         verification_repository = routes.ResearchRepository(verification_session)
         assert verification_repository.get_run(run_id).status == "complete"
         assert verification_repository.ensure_task_job(run_id).status == "complete"
+    finally:
+        verification_session.close()
+
+
+def test_failed_non_closed_run_resumes_same_id_and_preserves_evidence(tmp_path, monkeypatch):
+    settings = Settings(
+        app_mode=AppMode.DEVELOPMENT,
+        ai_provider="fake",
+        redis_url="redis://fixture",
+        database_url=f"sqlite:///{tmp_path / 'resume.db'}",
+    )
+    app = create_app(settings)
+    setup_session = app.state.db.session()
+    setup_repository = routes.ResearchRepository(setup_session)
+    run = setup_repository.create_run(routes.ResearchRunCreate(seeds=["storytelling"]))
+    setup_repository.ensure_task_job(run.id)
+    setup_repository.update_task_job(run.id, "running", increment_attempt=True)
+    setup_repository.add_evidence(run.id, {
+        "evidence_type": "video_enrichment",
+        "source_type": "youtube_api",
+        "source_entity_id": "video-1",
+        "payload": {"video_id": "video-1"},
+        "confidence": .9,
+        "human_readable_summary": "durable completed video",
+    })
+    setup_repository.transition(run, "failed", "fixture bug")
+    run_id = run.id
+    setup_session.close()
+    submissions = []
+
+    async def fake_abort(redis_url, abort_run_id, **kwargs):
+        assert abort_run_id == run_id
+        return False
+
+    async def fake_enqueue(redis_url, enqueue_run_id, **kwargs):
+        submissions.append((enqueue_run_id, kwargs["attempt"]))
+        return f"research:{enqueue_run_id}:attempt:{kwargs['attempt']}"
+
+    monkeypatch.setattr(routes, "abort_research_run", fake_abort)
+    monkeypatch.setattr(routes, "enqueue_research_run", fake_enqueue)
+
+    async def exercise():
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+            response = await client.post(f"/api/research-runs/{run_id}/resume")
+            assert response.status_code == 200
+            assert response.json()["id"] == run_id
+            assert response.json()["status"] == "queued"
+
+    asyncio.run(exercise())
+    assert submissions == [(run_id, 2)]
+    verification_session = app.state.db.session()
+    try:
+        repository = routes.ResearchRepository(verification_session)
+        evidence = repository.get_evidence(run_id)
+        assert [(item.evidence_type, item.source_entity_id) for item in evidence] == [
+            ("video_enrichment", "video-1")
+        ]
     finally:
         verification_session.close()

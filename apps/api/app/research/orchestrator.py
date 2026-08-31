@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import json
+import hashlib
 from pathlib import Path
 from collections import defaultdict
 from datetime import datetime, timezone
@@ -11,6 +12,16 @@ from typing import Any
 
 from ..ai.base import AIProvider
 from ..ai.embeddings import EmbeddingsProvider, FakeEmbeddingsProvider
+from ..ai.schemas import (
+    CandidateSynthesis,
+    CriticAssessment,
+    NicheClassification,
+    ReportSynthesis,
+    VideoEvidenceAnalysis,
+    ViralMechanism,
+    VisualStructureAnalysis,
+    WinnerLoserComparison,
+)
 from ..analytics.channel_performance import build_channel_profiles
 from ..analytics.clustering import cluster_videos
 from ..analytics.comparisons import select_matched_pairs
@@ -26,7 +37,7 @@ from ..domain.contracts import ResearchRunCreate
 from ..domain.enums import RequestedFormat, SourceType, Verdict
 from ..repositories.store import ResearchRepository
 from ..sources.assets import AssetConnector, AssetRunSession, calculate_clip_ceiling
-from ..sources.base import BrowserMediaRecord, DiscoveryRequest, VideoRecord
+from ..sources.base import BrowserMediaRecord, ChannelRecord, DiscoveryRequest, SearchResult, VideoRecord
 from ..sources.quota import QuotaManager
 from ..sources.media_analysis import PassthroughMediaAnalyzer
 from .preprocessing import english_likelihood, preprocess_video
@@ -68,7 +79,7 @@ class ResearchOrchestrator:
         try:
             self._transition(run, "planning")
             plan = self.planner.create(request)
-            self.repository.add_evidence(run_id, {
+            self.repository.upsert_evidence(run_id, {
                 "evidence_type": "research_plan",
                 "source_type": "deterministic",
                 "source_entity_id": run_id,
@@ -90,129 +101,234 @@ class ResearchOrchestrator:
                 ),
             })
             self._check_cancelled(run_id)
-            search_items = await self._discover(run_id, request, plan)
-            self._check_cancelled(run_id)
-            self._transition(run, "enriching")
-            initial_ids = list(search_items)[:request.limits.max_videos]
-            discovery_context = {video_id: _discovery_enrichment_context(search_items[video_id]) for video_id in initial_ids}
-            videos = [preprocess_video(video) for video in await self.youtube.enrich_videos(initial_ids, discovery_context)]
-            self._drain_source_diagnostics(run_id)
-            if not videos:
-                raise NicheIntelError("No candidate videos were discovered")
-            # Fast production-feasibility rejection happens before channel
-            # expansion, comments, transcripts, screenshots, or vision work.
-            initial_clip_preflight: dict[str, dict[str, Any]] = {}
-            retained_initial_ids: set[str] = set()
-            initial_classifications = {
-                video.youtube_video_id: classify_short(video, search_items.get(video.youtube_video_id))
-                for video in videos
-            }
-            initial_cluster_jobs = [
-                (assessment_format, format_records, initial_cluster)
-                for assessment_format, format_records in _assessment_video_groups(
-                    videos, initial_classifications, request.requested_format
-                )
-                for initial_cluster in cluster_videos(format_records, self.embeddings)
-            ]
-            preflight_allocations = _fair_allocations(
-                preflight_asset_session.preflight_capacity, len(initial_cluster_jobs)
-            )
-            semantic_validation_available = bool(
-                getattr(self.ai, "supports_semantic_image_validation", False)
-            )
-            for (assessment_format, format_records, initial_cluster), preflight_allocation in zip(
-                initial_cluster_jobs, preflight_allocations, strict=True
-            ):
-                initial_records = [
-                    video for video in format_records
-                    if video.youtube_video_id in initial_cluster.video_ids
-                ]
-                preliminary_ideas = await calculate_idea_ceiling(
-                    initial_records,
-                    self.ai,
-                    [],
-                    "Lightweight clip-supply preflight; do not treat this as the final idea ceiling.",
-                    self.embeddings,
-                )
-                preliminary_clips = await calculate_clip_ceiling(
-                    preliminary_ideas["candidate_ideas"],
-                    preflight_asset_session,
-                    visual_validator=self.ai,
-                    phase="preflight",
-                    maximum_new_ideas=preflight_allocation,
-                )
-                preflight_search_bounds = preliminary_clips.get("search_bounds", {})
-                preflight_sampling_coverage = (
-                    int(preflight_search_bounds.get("evaluated_ideas", 0))
-                    / max(int(preflight_search_bounds.get("searched_ideas", 0)), 1)
-                )
-                preflight_conclusive = (
-                    preflight_sampling_coverage >= request.minimum_clip_coverage
-                )
-                preflight_key = _assessment_cluster_key(assessment_format, initial_cluster.label)
-                preflight = {
-                    "stage": "pre_expansion_clip_preflight",
-                    "cluster_label": initial_cluster.label,
-                    "assessment_format": assessment_format.value,
-                    "generated_ideas": preliminary_ideas["unique_count"],
-                    "validated_count": preliminary_clips["validated_count"],
-                    "asset_coverage": preliminary_clips["asset_coverage"],
-                    "evaluated_asset_coverage": preliminary_clips["evaluated_asset_coverage"],
-                    "rights_metadata_share": preliminary_clips["rights_metadata_share"],
-                    "source_diversity": preliminary_clips["source_diversity"],
-                    "provider_diagnostics": preliminary_clips.get("provider_diagnostics", []),
-                    "search_bounds": preflight_search_bounds,
-                    "sampling_coverage": round(preflight_sampling_coverage, 3),
-                    "conclusive": preflight_conclusive,
-                    "passed": preflight_conclusive and preliminary_clips["evaluated_asset_coverage"] >= request.minimum_clip_coverage,
-                    "semantic_validation_available": semantic_validation_available,
+            expanded_checkpoint = self.repository.get_checkpoint(run_id, "expanded_enrichment_complete")
+            if expanded_checkpoint is not None:
+                search_items = {
+                    item["youtube_video_id"]: _search_result_from_payload(item)
+                    for item in expanded_checkpoint.get("search_items", [])
                 }
-                if not preflight_conclusive:
-                    preflight["deferred_to_final_validation"] = True
-                    preflight["reason"] = (
-                        "The fair preflight allocation was too small for a conclusive rejection; "
-                        "the authoritative final pass retains its reserved budget."
+                videos = [
+                    preprocess_video(_video_from_payload(item))
+                    for item in expanded_checkpoint.get("videos", [])
+                ]
+                initial_clip_preflight = dict(expanded_checkpoint.get("initial_clip_preflight", {}))
+                logger.info(
+                    "resumed expanded enrichment checkpoint",
+                    extra={"research_run_id": run_id, "stage": "enriching", "video_count": len(videos)},
+                )
+            else:
+                discovery_checkpoint = self.repository.get_checkpoint(run_id, "discovery_complete")
+                if discovery_checkpoint is not None:
+                    search_items = {
+                        item["youtube_video_id"]: _search_result_from_payload(item)
+                        for item in discovery_checkpoint.get("search_items", [])
+                    }
+                    logger.info(
+                        "resumed discovery checkpoint",
+                        extra={"research_run_id": run_id, "stage": "discovering", "video_count": len(search_items)},
                     )
-                elif (
-                    not preflight["passed"]
-                    and not semantic_validation_available
-                    and not self.settings.uses_fixture_sources
-                ):
-                    preflight["retained_for_negative_assessment"] = True
-                    preflight["reason"] = (
-                        "Semantic image validation is unavailable; the candidate is retained only "
-                        "to produce an insufficient-evidence assessment and cannot pass the clip gate."
+                else:
+                    search_items = await self._discover(run_id, request, plan)
+                    self.repository.save_checkpoint(
+                        run_id,
+                        "discovery_complete",
+                        {"search_items": [_search_result_to_payload(item) for item in search_items.values()]},
+                        f"Discovery checkpoint retained {len(search_items)} candidate videos.",
                     )
-                initial_clip_preflight[preflight_key] = preflight
-                if (
-                    preflight["passed"]
-                    or preflight.get("deferred_to_final_validation")
-                    or preflight.get("retained_for_negative_assessment")
+                self._check_cancelled(run_id)
+                self._transition(run, "enriching")
+                initial_ids = list(search_items)[:request.limits.max_videos]
+                discovery_context = {video_id: _discovery_enrichment_context(search_items[video_id]) for video_id in initial_ids}
+                videos = [preprocess_video(video) for video in await self.youtube.enrich_videos(initial_ids, discovery_context)]
+                self._drain_source_diagnostics(run_id)
+                if not videos:
+                    raise NicheIntelError("No candidate videos were discovered")
+                # Fast production-feasibility rejection happens before channel
+                # expansion, comments, transcripts, screenshots, or vision work.
+                initial_clip_preflight = {}
+                retained_initial_ids: set[str] = set()
+                initial_classifications = {
+                    video.youtube_video_id: classify_short(video, search_items.get(video.youtube_video_id))
+                    for video in videos
+                }
+                initial_cluster_jobs = [
+                    (assessment_format, format_records, initial_cluster)
+                    for assessment_format, format_records in _assessment_video_groups(
+                        videos, initial_classifications, request.requested_format
+                    )
+                    for initial_cluster in cluster_videos(format_records, self.embeddings)
+                ]
+                preflight_allocations = _fair_allocations(
+                    preflight_asset_session.preflight_capacity, len(initial_cluster_jobs)
+                )
+                semantic_validation_available = bool(
+                    getattr(self.ai, "supports_semantic_image_validation", False)
+                )
+                for (assessment_format, format_records, initial_cluster), preflight_allocation in zip(
+                    initial_cluster_jobs, preflight_allocations, strict=True
                 ):
-                    retained_initial_ids.update(initial_cluster.video_ids)
-                self.repository.add_evidence(run_id, {
-                    "evidence_type": "initial_clip_preflight",
-                    "source_type": "asset_fixture" if self.settings.uses_fixture_sources else "deterministic",
-                    "source_entity_id": preflight_key,
-                    "payload": preflight,
-                    "confidence": .98 if self.settings.uses_fixture_sources else .8,
-                    "human_readable_summary": f"Early {assessment_format.value} clip preflight for {initial_cluster.label}: {preflight['validated_count']} ideas validated; coverage {preflight['asset_coverage']:.0%}.",
-                })
-            if not retained_initial_ids:
-                raise NicheIntelError("All discovered niches failed the early real-clip availability gate")
-            videos = [video for video in videos if video.youtube_video_id in retained_initial_ids]
-            videos = [preprocess_video(video) for video in await self._expand_channels(run_id, videos, request)]
+                    preflight_key = _assessment_cluster_key(assessment_format, initial_cluster.label)
+                    cached_preflight = self.repository.evidence_item(
+                        run_id, "initial_clip_preflight", preflight_key
+                    )
+                    if cached_preflight is not None:
+                        preflight = dict(cached_preflight.payload)
+                    else:
+                        initial_records = [
+                            video for video in format_records
+                            if video.youtube_video_id in initial_cluster.video_ids
+                        ]
+                        idea_checkpoint = self.repository.get_checkpoint(
+                            run_id, f"preflight_ideas:{preflight_key}"
+                        )
+                        if idea_checkpoint is not None and isinstance(idea_checkpoint.get("idea"), dict):
+                            preliminary_ideas = dict(idea_checkpoint["idea"])
+                        else:
+                            preliminary_ideas = await calculate_idea_ceiling(
+                                initial_records,
+                                self.ai,
+                                [],
+                                "Lightweight clip-supply preflight; do not treat this as the final idea ceiling.",
+                                self.embeddings,
+                            )
+                            self.repository.save_checkpoint(
+                                run_id,
+                                f"preflight_ideas:{preflight_key}",
+                                {"idea": preliminary_ideas},
+                                f"Completed durable preliminary idea generation for {preflight_key}.",
+                            )
+                        preliminary_clips = await calculate_clip_ceiling(
+                            preliminary_ideas["candidate_ideas"],
+                            preflight_asset_session,
+                            visual_validator=self.ai,
+                            phase="preflight",
+                            maximum_new_ideas=preflight_allocation,
+                        )
+                        preflight_search_bounds = preliminary_clips.get("search_bounds", {})
+                        preflight_sampling_coverage = (
+                            int(preflight_search_bounds.get("evaluated_ideas", 0))
+                            / max(int(preflight_search_bounds.get("searched_ideas", 0)), 1)
+                        )
+                        preflight_conclusive = (
+                            preflight_sampling_coverage >= request.minimum_clip_coverage
+                        )
+                        preflight = {
+                            "stage": "pre_expansion_clip_preflight",
+                            "cluster_label": initial_cluster.label,
+                            "assessment_format": assessment_format.value,
+                            "video_ids": list(initial_cluster.video_ids),
+                            "generated_ideas": preliminary_ideas["unique_count"],
+                            "validated_count": preliminary_clips["validated_count"],
+                            "asset_coverage": preliminary_clips["asset_coverage"],
+                            "evaluated_asset_coverage": preliminary_clips["evaluated_asset_coverage"],
+                            "rights_metadata_share": preliminary_clips["rights_metadata_share"],
+                            "source_diversity": preliminary_clips["source_diversity"],
+                            "provider_diagnostics": preliminary_clips.get("provider_diagnostics", []),
+                            "search_bounds": preflight_search_bounds,
+                            "sampling_coverage": round(preflight_sampling_coverage, 3),
+                            "conclusive": preflight_conclusive,
+                            "passed": preflight_conclusive and preliminary_clips["evaluated_asset_coverage"] >= request.minimum_clip_coverage,
+                            "semantic_validation_available": semantic_validation_available,
+                        }
+                        if not preflight_conclusive:
+                            preflight["deferred_to_final_validation"] = True
+                            preflight["reason"] = (
+                                "The fair preflight allocation was too small for a conclusive rejection; "
+                                "the authoritative final pass retains its reserved budget."
+                            )
+                        elif (
+                            not preflight["passed"]
+                            and not semantic_validation_available
+                            and not self.settings.uses_fixture_sources
+                        ):
+                            preflight["retained_for_negative_assessment"] = True
+                            preflight["reason"] = (
+                                "Semantic image validation is unavailable; the candidate is retained only "
+                                "to produce an insufficient-evidence assessment and cannot pass the clip gate."
+                            )
+                        self.repository.upsert_evidence(run_id, {
+                            "evidence_type": "initial_clip_preflight",
+                            "source_type": "asset_fixture" if self.settings.uses_fixture_sources else "deterministic",
+                            "source_entity_id": preflight_key,
+                            "payload": preflight,
+                            "confidence": .98 if self.settings.uses_fixture_sources else .8,
+                            "human_readable_summary": f"Early {assessment_format.value} clip preflight for {initial_cluster.label}: {preflight['validated_count']} ideas validated; coverage {preflight['asset_coverage']:.0%}.",
+                        })
+                    initial_clip_preflight[preflight_key] = preflight
+                    if (
+                        preflight.get("passed")
+                        or preflight.get("deferred_to_final_validation")
+                        or preflight.get("retained_for_negative_assessment")
+                    ):
+                        retained_initial_ids.update(preflight.get("video_ids") or initial_cluster.video_ids)
+                if not retained_initial_ids:
+                    raise NicheIntelError("All discovered niches failed the early real-clip availability gate")
+                videos = [video for video in videos if video.youtube_video_id in retained_initial_ids]
+                videos = [preprocess_video(video) for video in await self._expand_channels(run_id, videos, request)]
+                persisted_videos = _persisted_video_records(self.repository, run_id)
+                videos = list({
+                    video.youtube_video_id: video
+                    for video in [*persisted_videos, *videos]
+                }.values())[:request.limits.max_videos]
+                self.repository.save_checkpoint(
+                    run_id,
+                    "expanded_enrichment_complete",
+                    {
+                        "search_items": [_search_result_to_payload(item) for item in search_items.values()],
+                        "videos": [_video_to_payload(video) for video in videos],
+                        "initial_clip_preflight": initial_clip_preflight,
+                    },
+                    f"Expanded-enrichment checkpoint retained {len(videos)} normalized videos.",
+                )
+
+            if not videos:
+                raise NicheIntelError("The expanded-enrichment checkpoint contains no usable videos")
+            self._transition(run, "enriching")
 
             source_name = "fixture_api" if self.settings.uses_fixture_sources else "youtube_api" if self.settings.youtube_api_key else "keyless_ytdlp"
             channel_ids = list(dict.fromkeys(video.channel_id for video in videos))[:request.limits.max_channels]
-            channel_models = {item.youtube_channel_id: self.repository.upsert_channel(item, source_name, run_id) for item in await self.youtube.enrich_channels(channel_ids)}
+            channel_checkpoint = self.repository.get_checkpoint(run_id, "channel_enrichment_complete")
+            if channel_checkpoint is not None:
+                channel_records = [
+                    _channel_from_payload(item)
+                    for item in channel_checkpoint.get("channels", [])
+                ]
+            else:
+                channel_records = await self.youtube.enrich_channels(channel_ids)
+                self.repository.save_checkpoint(
+                    run_id,
+                    "channel_enrichment_complete",
+                    {"channels": [_channel_to_payload(item) for item in channel_records]},
+                    f"Channel enrichment checkpoint retained {len(channel_records)} channels.",
+                )
+            channel_models = {
+                item.youtube_channel_id: self.repository.upsert_channel(item, source_name, run_id)
+                for item in channel_records
+            }
             video_models: dict[str, Any] = {}
             media_by_video: dict[str, BrowserMediaRecord] = {}
+            persisted_media = _persisted_media_records(self.repository, run_id)
+            processed_video_ids = {
+                str(item.source_entity_id)
+                for item in self.repository.get_evidence(run_id)
+                if item.evidence_type == "video_enrichment" and item.source_entity_id
+            }
             filmstrip_targets = _select_representative_media_ids(videos, self.settings.media_max_videos_per_run)
             heavy_media_targets = filmstrip_targets if getattr(self.media_analyzer, "requires_download", False) else {video.youtube_video_id for video in videos}
             for video in videos:
                 model = self.repository.upsert_video(video, channel_models.get(video.channel_id), source_name, run_id)
                 video_models[video.youtube_video_id] = model
+                if video.youtube_video_id in processed_video_ids and video.youtube_video_id in persisted_media:
+                    media_by_video[video.youtube_video_id] = persisted_media[video.youtube_video_id]
+                    logger.info(
+                        "resumed completed video checkpoint",
+                        extra={
+                            "research_run_id": run_id,
+                            "stage": "enriching",
+                            "video_id": video.youtube_video_id,
+                        },
+                    )
+                    continue
                 comments = await self.youtube.sample_comments(video.youtube_video_id, 3)
                 self.repository.add_comment_samples(model.id, comments, source_name)
                 media = await self._inspect_video_with_partial_result(
@@ -236,7 +352,7 @@ class ResearchOrchestrator:
                 media_by_video[video.youtube_video_id] = media
                 self.repository.add_browser_media(run_id, model.id, media)
                 if media.visual_features.get("deepgram_status") == "download_unavailable":
-                    self.repository.add_evidence(run_id, {
+                    self.repository.upsert_evidence(run_id, {
                         "evidence_type": "media_analysis_unavailable",
                         "source_type": SourceType.KEYLESS_YTDLP.value,
                         "source_entity_id": video.youtube_video_id,
@@ -260,7 +376,7 @@ class ResearchOrchestrator:
                             "browser evidence was retained and the run continued."
                         ),
                     })
-                self.repository.add_evidence(run_id, {
+                self.repository.upsert_evidence(run_id, {
                     "evidence_type": "browser_media_observation",
                     "source_type": "fixture_browser" if self.settings.uses_fixture_sources else "browser",
                     "source_entity_id": video.youtube_video_id,
@@ -292,17 +408,30 @@ class ResearchOrchestrator:
                     "confidence": media.confidence,
                     "human_readable_summary": f"Browser inspection for {video.title}: transcript, frames, presentation, and observable structure captured with provenance.",
                 })
-                self.repository.add_evidence(run_id, {
+                self.repository.upsert_evidence(run_id, {
                     "evidence_type": "video_enrichment", "source_type": source_name, "source_entity_id": video.youtube_video_id,
-                    "payload": {"video_id": video.youtube_video_id, "channel_id": video.channel_id, "view_count": video.view_count, "published_at": video.published_at.isoformat(), "duration_seconds": video.duration_seconds},
+                    "payload": _video_to_payload(video),
                     "confidence": .99 if source_name == "fixture_api" else .96,
                     "human_readable_summary": f"Observed {video.title} with {video.view_count:,} public views.",
                 })
+                self.repository.save_checkpoint(
+                    run_id,
+                    f"video_complete:{video.youtube_video_id}",
+                    {"video": _video_to_payload(video), "media": _media_to_payload(media)},
+                    f"Completed and released temporary media for {video.youtube_video_id}.",
+                )
+
+            self.repository.save_checkpoint(
+                run_id,
+                "video_enrichment_complete",
+                {"video_ids": [video.youtube_video_id for video in videos]},
+                f"Per-video enrichment checkpoint completed {len(videos)} videos.",
+            )
 
             classifications = {video.youtube_video_id: classify_short(video, search_items.get(video.youtube_video_id), media_by_video.get(video.youtube_video_id)) for video in videos}
             for video in videos:
                 item = classifications[video.youtube_video_id]
-                self.repository.add_evidence(run_id, {
+                self.repository.upsert_evidence(run_id, {
                     "evidence_type": "shorts_classification", "source_type": "deterministic", "source_entity_id": video.youtube_video_id,
                     "payload": {"video_id": video.youtube_video_id, "channel_id": video.channel_id, **item.as_dict()},
                     "confidence": item.confidence, "human_readable_summary": f"{video.title}: {item.status.value} ({'; '.join(item.reasons)}).",
@@ -334,7 +463,7 @@ class ResearchOrchestrator:
                     "comparison_cohort": {"channel_id": cohort_key[0], "format": cohort_key[1], "cohort_size": metric.cohort_size, "age_days": metric.age_days, "recency_bucket": metric.recency_bucket, "outlier_threshold": self.settings.outlier_threshold},
                     "baseline_metric": metric.baseline_metric, "metric_value": metric.metric_value, "outlier_multiple": metric.outlier_multiple, "label": metric.label, "calculation_version": metric.calculation_version,
                 })
-                self.repository.add_evidence(run_id, {
+                self.repository.upsert_evidence(run_id, {
                     "evidence_type": "deterministic_outlier", "source_type": "deterministic", "source_entity_id": video.youtube_video_id,
                     "payload": {"video_id": video.youtube_video_id, "channel_id": video.channel_id, "outlier_multiple": metric.outlier_multiple, "label": metric.label, "baseline": metric.baseline_metric, "age_days": metric.age_days, "recency_bucket": metric.recency_bucket, "cohort_size": metric.cohort_size, "outlier_threshold": self.settings.outlier_threshold},
                     "confidence": metric.confidence, "human_readable_summary": f"{video.title}: {metric.outlier_multiple:.1f}x same-channel baseline; {metric.recency_bucket} evidence.",
@@ -383,12 +512,18 @@ class ResearchOrchestrator:
                 media = media_by_video.get(video.youtube_video_id)
                 if media is None or not media.frame_refs:
                     continue
-                visual = await self.ai.analyze_visuals(
-                    f"title={video.title}; opening={media.opening_visual_summary}; captions={media.caption_style}; structure={media.observable_structure}; pacing_score={media.pacing_score}",
-                    media.frame_refs, [],
+                visual = await self._checkpointed_ai(
+                    run_id,
+                    f"visual_analysis:{video.youtube_video_id}",
+                    VisualStructureAnalysis,
+                    lambda video=video, media=media: self.ai.analyze_visuals(
+                        f"title={video.title}; opening={media.opening_visual_summary}; captions={media.caption_style}; structure={media.observable_structure}; pacing_score={media.pacing_score}",
+                        media.frame_refs,
+                        [],
+                    ),
                 )
                 vision_by_video[video.youtube_video_id] = visual.model_dump()
-                self.repository.add_evidence(run_id, {
+                self.repository.upsert_evidence(run_id, {
                     "evidence_type": "visual_structure_analysis", "source_type": "ai", "source_entity_id": video.youtube_video_id,
                     "payload": {"video_id": video.youtube_video_id, "channel_id": video.channel_id, **visual.model_dump(), "frame_refs": media.frame_refs},
                     "confidence": visual.confidence, "human_readable_summary": f"Visual analysis for {video.title}: {visual.hook_visual}",
@@ -433,7 +568,14 @@ class ResearchOrchestrator:
                     "visual_analysis": vision_by_video.get(video.youtube_video_id),
                     "evidence_ids": ledger_ids,
                 }
-                interpretation = await self.ai.analyze_video(json.dumps(packet, default=str), ledger_ids)
+                interpretation = await self._checkpointed_ai(
+                    run_id,
+                    f"video_analysis:{video.youtube_video_id}",
+                    VideoEvidenceAnalysis,
+                    lambda packet=packet, ledger_ids=ledger_ids: self.ai.analyze_video(
+                        json.dumps(packet, default=str), ledger_ids
+                    ),
+                )
                 citation_validation = validate_citations(
                     interpretation.supporting_evidence_ids + interpretation.transcript_evidence_ids,
                     ledger_ids,
@@ -444,7 +586,7 @@ class ResearchOrchestrator:
                     "packet_version": packet["packet_version"],
                 }
                 video_analysis_by_video[video.youtube_video_id] = interpretation_payload
-                self.repository.add_evidence(run_id, {
+                self.repository.upsert_evidence(run_id, {
                     "evidence_type": "video_ai_observation", "source_type": "ai", "source_entity_id": video.youtube_video_id,
                     "payload": {"video_id": video.youtube_video_id, "channel_id": video.channel_id, **interpretation_payload},
                     "confidence": interpretation.confidence if citation_validation["passed"] else 0.0,
@@ -462,7 +604,15 @@ class ResearchOrchestrator:
                 multiple_map,
                 media_by_video,
             ):
-                interpreted = await self.ai.compare_winner_loser(pair["winner"], pair["loser"], all_evidence_ids)
+                comparison_key = _comparison_checkpoint_key(assessment_format, pair)
+                interpreted = await self._checkpointed_ai(
+                    run_id,
+                    f"comparison:{comparison_key}",
+                    WinnerLoserComparison,
+                    lambda pair=pair: self.ai.compare_winner_loser(
+                        pair["winner"], pair["loser"], all_evidence_ids
+                    ),
+                )
                 payload = _deterministic_comparison_payload(
                     pair,
                     interpreted.model_dump(),
@@ -473,6 +623,23 @@ class ResearchOrchestrator:
                     "payload": payload, "confidence": interpreted.confidence, "provider": self.ai.name,
                 })
                 comparisons.append(payload)
+                self.repository.upsert_evidence(run_id, {
+                    "evidence_type": "winner_loser_comparison",
+                    "source_type": "ai",
+                    "source_entity_id": comparison_key,
+                    "payload": payload,
+                    "confidence": interpreted.confidence,
+                    "human_readable_summary": (
+                        f"Compared winner {pair['winner']['id']} with loser {pair['loser']['id']} "
+                        f"for {assessment_format.value}."
+                    ),
+                })
+            self.repository.save_checkpoint(
+                run_id,
+                "comparative_analysis_complete",
+                {"comparison_count": len(comparisons)},
+                f"Comparative analysis completed {len(comparisons)} matched pairs.",
+            )
             self._transition(run, "reporting")
             candidates: list[dict[str, Any]] = []
             ranked_assessed_clusters = sorted(
@@ -494,6 +661,9 @@ class ResearchOrchestrator:
                 ranked_assessed_clusters,
                 start=1,
             ):
+                candidate_key = _candidate_checkpoint_key(
+                    assessment_format, cluster.label, cluster.video_ids
+                )
                 final_asset_session = AssetRunSession.for_final_candidate(
                     self.assets,
                     maximum_ideas=final_clip_capacity,
@@ -513,7 +683,14 @@ class ResearchOrchestrator:
                     and item["loser_video_id"] in cluster.video_ids
                 ]
                 dossier = self._mechanism_dossier(cluster_records, media_by_video, vision_by_video, outliers, cluster_pairs)
-                mechanism = await self.ai.viral_mechanism(dossier, evidence_ids)
+                mechanism = await self._checkpointed_ai(
+                    run_id,
+                    f"candidate_mechanism:{candidate_key}",
+                    ViralMechanism,
+                    lambda dossier=dossier, evidence_ids=evidence_ids: self.ai.viral_mechanism(
+                        dossier, evidence_ids
+                    ),
+                )
                 mechanism_citations = validate_citations(mechanism.supporting_evidence_ids, evidence_ids)
                 mechanism_confidence, mechanism_channel_count = _validated_mechanism_support(
                     evidence,
@@ -527,20 +704,49 @@ class ResearchOrchestrator:
                     "evidence_refs": mechanism.supporting_evidence_ids, "alternative_explanation": mechanism.alternative_explanation,
                     "confidence": mechanism_confidence, "provider": self.ai.name, "version": self.ai.version,
                 })
-                mechanism_evidence = self.repository.add_evidence(run_id, {
-                    "evidence_type": "viral_mechanism_analysis", "source_type": "ai", "source_entity_id": cluster_model.id,
+                mechanism_evidence = self.repository.upsert_evidence(run_id, {
+                    "evidence_type": "viral_mechanism_analysis", "source_type": "ai", "source_entity_id": candidate_key,
                     "payload": {**mechanism.model_dump(), "citation_validation": mechanism_citations, "mechanism_evidence_channels": mechanism_channel_count},
                     "confidence": mechanism_confidence,
                     "human_readable_summary": f"Mechanism hypothesis for {cluster.label}: {mechanism.primary_mechanism}",
                 })
-                idea = await calculate_idea_ceiling(cluster_records, self.ai, evidence_ids, dossier, self.embeddings)
-                clip = await calculate_clip_ceiling(
-                    idea["candidate_ideas"],
-                    final_asset_session,
-                    visual_validator=self.ai,
-                    phase="final",
-                    maximum_new_ideas=final_clip_capacity,
+                asset_checkpoint = self.repository.get_checkpoint(
+                    run_id, f"candidate_assets:{candidate_key}"
                 )
+                if asset_checkpoint is not None:
+                    idea = dict(asset_checkpoint.get("idea", {}))
+                    clip = dict(asset_checkpoint.get("clip", {}))
+                    if not idea or not clip:
+                        asset_checkpoint = None
+                if asset_checkpoint is None:
+                    idea_checkpoint = self.repository.get_checkpoint(
+                        run_id, f"candidate_ideas:{candidate_key}"
+                    )
+                    if idea_checkpoint is not None and isinstance(idea_checkpoint.get("idea"), dict):
+                        idea = dict(idea_checkpoint["idea"])
+                    else:
+                        idea = await calculate_idea_ceiling(
+                            cluster_records, self.ai, evidence_ids, dossier, self.embeddings
+                        )
+                        self.repository.save_checkpoint(
+                            run_id,
+                            f"candidate_ideas:{candidate_key}",
+                            {"idea": idea},
+                            f"Completed durable final idea generation for {candidate_key}.",
+                        )
+                    clip = await calculate_clip_ceiling(
+                        idea["candidate_ideas"],
+                        final_asset_session,
+                        visual_validator=self.ai,
+                        phase="final",
+                        maximum_new_ideas=final_clip_capacity,
+                    )
+                    self.repository.save_checkpoint(
+                        run_id,
+                        f"candidate_assets:{candidate_key}",
+                        {"idea": idea, "clip": clip},
+                        f"Completed durable idea and clip validation for {candidate_key}.",
+                    )
                 clip["initial_preflight"] = initial_clip_preflight.get(
                     _assessment_cluster_key(assessment_format, cluster.label),
                     {"stage": "pre_expansion_clip_preflight", "assessment_format": assessment_format.value, "passed": False, "reason": "cluster emerged only after expansion"},
@@ -559,7 +765,14 @@ class ResearchOrchestrator:
                 cluster_profiles = _cluster_channel_profiles(profiles, cluster_records)
                 successful_channels = sum(bool(profile["successful"]) for profile in cluster_profiles.values())
                 saturation = assess_saturation(cluster_records, multiples, supporting_window_days, now)
-                classification = await self.ai.classify_niche(dossier, evidence_ids)
+                classification = await self._checkpointed_ai(
+                    run_id,
+                    f"candidate_classification:{candidate_key}",
+                    NicheClassification,
+                    lambda dossier=dossier, evidence_ids=evidence_ids: self.ai.classify_niche(
+                        dossier, evidence_ids
+                    ),
+                )
                 evidence_confidence = _evidence_confidence(evidence)
                 rec = recommend(
                     assessment_format, len(cluster_channels), len(recent), idea, clip, saturation, mechanism_confidence,
@@ -570,7 +783,19 @@ class ResearchOrchestrator:
                     minimum_outlier_channels=request.minimum_outlier_channels, minimum_comparisons=request.minimum_winner_loser_pairs,
                     maximum_saturation=request.maximum_saturation,
                 )
-                trend = await self._trend_assessment(cluster_records, outliers, request)
+                trend_checkpoint = self.repository.get_checkpoint(
+                    run_id, f"candidate_trend:{candidate_key}"
+                )
+                if trend_checkpoint is not None and isinstance(trend_checkpoint.get("trend"), dict):
+                    trend = dict(trend_checkpoint["trend"])
+                else:
+                    trend = await self._trend_assessment(cluster_records, outliers, request)
+                    self.repository.save_checkpoint(
+                        run_id,
+                        f"candidate_trend:{candidate_key}",
+                        {"trend": trend},
+                        f"Completed durable trend assessment for {candidate_key}.",
+                    )
                 repeated = [snapshot_metrics[video.youtube_video_id] for video in cluster_records]
                 trend["repeated_observations"] = {
                     "videos_with_two_or_more_snapshots": sum(len(snapshot_histories[metric.video_id]) >= 2 for metric in repeated),
@@ -599,29 +824,41 @@ class ResearchOrchestrator:
                     "production_policy": "Faceless suitability is annotated per idea and never gates discovery.",
                     "revenue_potential": _revenue_proxy(cluster_records, cluster_profiles),
                 }
-                packet_evidence = self.repository.add_evidence(run_id, {
-                    "evidence_type": "candidate_research_packet", "source_type": "deterministic", "source_entity_id": cluster_model.id,
+                packet_evidence = self.repository.upsert_evidence(run_id, {
+                    "evidence_type": "candidate_research_packet", "source_type": "deterministic", "source_entity_id": candidate_key,
                     "payload": deterministic_packet, "confidence": evidence_confidence,
                     "human_readable_summary": f"Candidate packet for {classification.niche} reconciles deterministic metrics, transcripts, visual observations, comparisons, and production evidence.",
                 })
                 synthesis_allowed_ids = list(dict.fromkeys([*evidence_ids, str(mechanism_evidence.id), str(packet_evidence.id)]))
-                synthesis = await self.ai.synthesize_candidate(json.dumps(deterministic_packet, default=str), synthesis_allowed_ids)
+                synthesis = await self._checkpointed_ai(
+                    run_id,
+                    f"candidate_synthesis:{candidate_key}",
+                    CandidateSynthesis,
+                    lambda deterministic_packet=deterministic_packet, synthesis_allowed_ids=synthesis_allowed_ids: self.ai.synthesize_candidate(
+                        json.dumps(deterministic_packet, default=str), synthesis_allowed_ids
+                    ),
+                )
                 synthesis_citations = validate_citations(synthesis.supporting_evidence_ids, synthesis_allowed_ids)
                 synthesis_payload = {**synthesis.model_dump(), "citation_validation": synthesis_citations, "provider": self.ai.name, "version": self.ai.version}
-                synthesis_evidence = self.repository.add_evidence(run_id, {
-                    "evidence_type": "candidate_synthesis", "source_type": "ai", "source_entity_id": cluster_model.id,
+                synthesis_evidence = self.repository.upsert_evidence(run_id, {
+                    "evidence_type": "candidate_synthesis", "source_type": "ai", "source_entity_id": candidate_key,
                     "payload": synthesis_payload, "confidence": synthesis.confidence if synthesis_citations["passed"] else 0.0,
                     "human_readable_summary": f"Research-editor synthesis for {classification.niche}: {synthesis.executive_summary}",
                 })
                 critic_allowed_ids = [*synthesis_allowed_ids, str(synthesis_evidence.id)]
-                critic = await self.ai.critique(
-                    json.dumps({"candidate_packet": deterministic_packet, "editor_synthesis": synthesis_payload}, default=str),
-                    critic_allowed_ids,
+                critic = await self._checkpointed_ai(
+                    run_id,
+                    f"candidate_critic:{candidate_key}",
+                    CriticAssessment,
+                    lambda deterministic_packet=deterministic_packet, synthesis_payload=synthesis_payload, critic_allowed_ids=critic_allowed_ids: self.ai.critique(
+                        json.dumps({"candidate_packet": deterministic_packet, "editor_synthesis": synthesis_payload}, default=str),
+                        critic_allowed_ids,
+                    ),
                 )
                 critic_citations = validate_citations(critic.supporting_evidence_ids, critic_allowed_ids)
                 critic_payload = {**critic.model_dump(), "citation_validation": critic_citations, "provider": self.ai.name, "version": self.ai.version}
-                critic_evidence = self.repository.add_evidence(run_id, {
-                    "evidence_type": "research_critic", "source_type": "ai", "source_entity_id": cluster_model.id,
+                critic_evidence = self.repository.upsert_evidence(run_id, {
+                    "evidence_type": "research_critic", "source_type": "ai", "source_entity_id": candidate_key,
                     "payload": critic_payload, "confidence": 1.0 if critic_citations["passed"] else 0.0,
                     "human_readable_summary": f"Independent critic for {classification.niche}: {'; '.join(critic.challenges)}",
                 })
@@ -667,14 +904,27 @@ class ResearchOrchestrator:
                     for item in candidates
                 ],
             }
-            report_synthesis = await self.ai.synthesize_report(json.dumps(report_packet, default=str), report_ledger_ids)
+            report_synthesis = await self._checkpointed_ai(
+                run_id,
+                "report_synthesis",
+                ReportSynthesis,
+                lambda: self.ai.synthesize_report(
+                    json.dumps(report_packet, default=str), report_ledger_ids
+                ),
+            )
             report_citations = validate_citations(report_synthesis.supporting_evidence_ids, report_ledger_ids)
-            self.repository.add_evidence(run_id, {
+            self.repository.upsert_evidence(run_id, {
                 "evidence_type": "report_synthesis", "source_type": "ai", "source_entity_id": run_id,
                 "payload": {**report_synthesis.model_dump(), "citation_validation": report_citations, "provider": self.ai.name, "version": self.ai.version},
                 "confidence": report_synthesis.confidence if report_citations["passed"] else 0.0,
                 "human_readable_summary": f"Portfolio synthesis: {report_synthesis.executive_summary}",
             })
+            self.repository.save_checkpoint(
+                run_id,
+                "pipeline_complete",
+                {"candidate_count": len(candidates)},
+                f"Pipeline completed with {len(candidates)} ranked candidates.",
+            )
             self._transition(run, "complete")
             self._run_context[run_id] = {"videos": videos, "outliers": outliers, "classifications": classifications, "profiles_by_format": profiles_by_format, "comparisons": comparisons, "candidates": candidates}
             return run
@@ -685,6 +935,33 @@ class ResearchOrchestrator:
         finally:
             self.artifacts.cleanup_run_temporary(run_id)
             self.artifacts.cleanup_expired()
+
+    async def _checkpointed_ai(
+        self,
+        run_id: str,
+        checkpoint_key: str,
+        schema: type[Any],
+        operation: Any,
+    ) -> Any:
+        checkpoint = self.repository.get_checkpoint(run_id, checkpoint_key)
+        if checkpoint is not None and isinstance(checkpoint.get("result"), dict):
+            logger.info(
+                "resumed AI checkpoint",
+                extra={
+                    "research_run_id": run_id,
+                    "stage": "analysing",
+                    "checkpoint_key": checkpoint_key,
+                },
+            )
+            return schema.model_validate(checkpoint["result"])
+        result = await operation()
+        self.repository.save_checkpoint(
+            run_id,
+            checkpoint_key,
+            {"result": result.model_dump(mode="json")},
+            f"Completed durable AI step {checkpoint_key} with {self.ai.name}.",
+        )
+        return result
 
     async def _discover(self, run_id: str, request: ResearchRunCreate, plan: Any) -> dict[str, Any]:
         self._transition(self.repository.get_run(run_id), "discovering")
@@ -798,7 +1075,7 @@ class ResearchOrchestrator:
                 "opening_visual", "captions", "observable_structure",
             ]
             observed_at = datetime.now(timezone.utc)
-            self.repository.add_evidence(run_id, {
+            self.repository.upsert_evidence(run_id, {
                 "evidence_type": "browser_video_inspection_skipped",
                 "source_type": "fixture_browser" if self.settings.uses_fixture_sources else "browser",
                 "source_entity_id": video.youtube_video_id,
@@ -843,8 +1120,22 @@ class ResearchOrchestrator:
         per_channel = _bounded_channel_result_limit(request, self.settings, len(channels))
         uploads_by_channel: list[list[VideoRecord]] = []
         for channel_id in channels:
-            uploads = await self.youtube.expand_channel_uploads(channel_id, per_channel)
-            self._drain_source_diagnostics(run_id)
+            checkpoint_key = f"channel_uploads:{channel_id}"
+            checkpoint = self.repository.get_checkpoint(run_id, checkpoint_key)
+            if checkpoint is not None:
+                uploads = [
+                    preprocess_video(_video_from_payload(item))
+                    for item in checkpoint.get("videos", [])
+                ]
+            else:
+                uploads = await self.youtube.expand_channel_uploads(channel_id, per_channel)
+                self._drain_source_diagnostics(run_id)
+                self.repository.save_checkpoint(
+                    run_id,
+                    checkpoint_key,
+                    {"videos": [_video_to_payload(video) for video in uploads]},
+                    f"Channel expansion checkpoint retained {len(uploads)} uploads for {channel_id}.",
+                )
             uploads_by_channel.append(uploads)
 
         # Allocate expansion slots round-robin. Source feeds may return more
@@ -879,7 +1170,7 @@ class ResearchOrchestrator:
                 if diagnostic.diagnostic_type.startswith("youtube_api_")
                 else SourceType.KEYLESS_YTDLP.value
             )
-            self.repository.add_evidence(run_id, {
+            self.repository.upsert_evidence(run_id, {
                 "evidence_type": diagnostic.diagnostic_type,
                 "source_type": source_type,
                 "source_entity_id": diagnostic.source_entity_id,
@@ -955,6 +1246,10 @@ class ResearchOrchestrator:
         self.artifacts.cleanup_run_temporary(run.id)
 
     def _check_cancelled(self, run_id: str) -> None:
+        self.repository.session.expire_all()
+        persisted = self.repository.get_run(run_id)
+        if persisted is not None and persisted.status == "cancelled":
+            self.cancelled_runs.add(run_id)
         if run_id in self.cancelled_runs:
             raise NicheIntelError("research run cancelled")
 
@@ -1097,6 +1392,228 @@ def _merge_media_candidates(short: dict[str, Any], longform: dict[str, Any], sim
     if short["primary_viral_mechanism"] != longform["primary_viral_mechanism"]:
         merged["primary_viral_mechanism"] = f"Shorts: {short['primary_viral_mechanism']} | Long-form: {longform['primary_viral_mechanism']}"
     return merged
+
+
+def _search_result_to_payload(item: SearchResult) -> dict[str, Any]:
+    return {
+        "youtube_video_id": item.youtube_video_id,
+        "canonical_url": item.canonical_url,
+        "title": item.title,
+        "channel_id": item.channel_id,
+        "channel_title": item.channel_title,
+        "visible_views_text": item.visible_views_text,
+        "visible_age_text": item.visible_age_text,
+        "presented_as_short": item.presented_as_short,
+        "result_position": item.result_position,
+        "screenshot_ref": item.screenshot_ref,
+        "raw_payload": item.raw_payload,
+    }
+
+
+def _search_result_from_payload(payload: dict[str, Any]) -> SearchResult:
+    return SearchResult(
+        youtube_video_id=str(payload["youtube_video_id"]),
+        canonical_url=str(payload["canonical_url"]),
+        title=str(payload.get("title") or "Untitled video"),
+        channel_id=str(payload.get("channel_id") or "unknown-channel"),
+        channel_title=str(payload.get("channel_title") or "Unknown channel"),
+        visible_views_text=str(payload.get("visible_views_text") or ""),
+        visible_age_text=str(payload.get("visible_age_text") or ""),
+        presented_as_short=bool(payload.get("presented_as_short")),
+        result_position=int(payload.get("result_position") or 0),
+        screenshot_ref=payload.get("screenshot_ref"),
+        raw_payload=dict(payload.get("raw_payload") or {}),
+    )
+
+
+def _channel_to_payload(channel: ChannelRecord) -> dict[str, Any]:
+    return {
+        "youtube_channel_id": channel.youtube_channel_id,
+        "canonical_url": channel.canonical_url,
+        "title": channel.title,
+        "description": channel.description,
+        "subscriber_count": channel.subscriber_count,
+        "total_view_count": channel.total_view_count,
+        "video_count": channel.video_count,
+    }
+
+
+def _channel_from_payload(payload: dict[str, Any]) -> ChannelRecord:
+    return ChannelRecord(
+        youtube_channel_id=str(payload["youtube_channel_id"]),
+        canonical_url=str(payload.get("canonical_url") or ""),
+        title=str(payload.get("title") or payload["youtube_channel_id"]),
+        description=str(payload.get("description") or ""),
+        subscriber_count=int(payload["subscriber_count"]) if payload.get("subscriber_count") is not None else None,
+        total_view_count=int(payload["total_view_count"]) if payload.get("total_view_count") is not None else None,
+        video_count=int(payload["video_count"]) if payload.get("video_count") is not None else None,
+    )
+
+
+def _video_to_payload(video: VideoRecord) -> dict[str, Any]:
+    return {
+        "youtube_video_id": video.youtube_video_id,
+        "channel_id": video.channel_id,
+        "canonical_url": video.canonical_url,
+        "title": video.title,
+        "description": video.description,
+        "duration_seconds": video.duration_seconds,
+        "published_at": video.published_at.isoformat(),
+        "category_id": video.category_id,
+        "tags": video.tags,
+        "thumbnails": video.thumbnails,
+        "view_count": video.view_count,
+        "like_count": video.like_count,
+        "comment_count": video.comment_count,
+        "is_short": video.is_short,
+        "format_label": video.format_label,
+        "topic": video.topic,
+        "shorts_evidence": video.shorts_evidence,
+    }
+
+
+def _video_from_payload(payload: dict[str, Any]) -> VideoRecord:
+    published_at = _checkpoint_datetime(payload.get("published_at"))
+    if published_at is None:
+        raise ValueError(f"checkpoint video {payload.get('youtube_video_id')} has no publication time")
+    return VideoRecord(
+        youtube_video_id=str(payload["youtube_video_id"]),
+        channel_id=str(payload.get("channel_id") or "unknown-channel"),
+        canonical_url=str(payload.get("canonical_url") or f"https://www.youtube.com/watch?v={payload['youtube_video_id']}"),
+        title=str(payload.get("title") or "Untitled video"),
+        description=str(payload.get("description") or ""),
+        duration_seconds=int(payload["duration_seconds"]) if payload.get("duration_seconds") is not None else None,
+        published_at=published_at,
+        category_id=str(payload["category_id"]) if payload.get("category_id") is not None else None,
+        tags=[str(item) for item in payload.get("tags") or []],
+        thumbnails=dict(payload.get("thumbnails") or {}),
+        view_count=int(payload.get("view_count") or 0),
+        like_count=int(payload["like_count"]) if payload.get("like_count") is not None else None,
+        comment_count=int(payload["comment_count"]) if payload.get("comment_count") is not None else None,
+        is_short=bool(payload.get("is_short")),
+        format_label=str(payload.get("format_label") or ""),
+        topic=str(payload.get("topic") or ""),
+        shorts_evidence=str(payload.get("shorts_evidence") or "unspecified"),
+    )
+
+
+def _media_to_payload(media: BrowserMediaRecord) -> dict[str, Any]:
+    return {
+        "source_profile": media.source_profile,
+        "is_short_presentation": media.is_short_presentation,
+        "visible_transcript": media.visible_transcript,
+        "thumbnail_ref": media.thumbnail_ref,
+        "frame_refs": media.frame_refs,
+        "opening_visual_summary": media.opening_visual_summary,
+        "caption_style": media.caption_style,
+        "observable_structure": media.observable_structure,
+        "observed_at": media.observed_at.isoformat(),
+        "confidence": media.confidence,
+        "first_spoken_line": media.first_spoken_line,
+        "duration_seconds": media.duration_seconds,
+        "scene_change_count": media.scene_change_count,
+        "average_shot_duration_seconds": media.average_shot_duration_seconds,
+        "reveal_timestamp_seconds": media.reveal_timestamp_seconds,
+        "caption_density": media.caption_density,
+        "motion_score": media.motion_score,
+        "pacing_score": media.pacing_score,
+        "music_cue_count": media.music_cue_count,
+        "editing_pattern": media.editing_pattern,
+        "visual_features": media.visual_features,
+    }
+
+
+def _media_from_payload(payload: dict[str, Any]) -> BrowserMediaRecord:
+    return BrowserMediaRecord(
+        source_profile=str(payload.get("source_profile") or "research"),
+        is_short_presentation=bool(payload.get("is_short_presentation")),
+        visible_transcript=payload.get("visible_transcript"),
+        thumbnail_ref=payload.get("thumbnail_ref"),
+        frame_refs=[str(item) for item in payload.get("frame_refs") or []],
+        opening_visual_summary=payload.get("opening_visual_summary"),
+        caption_style=payload.get("caption_style"),
+        observable_structure=[str(item) for item in payload.get("observable_structure") or []],
+        observed_at=_checkpoint_datetime(payload.get("observed_at")) or datetime.now(timezone.utc),
+        confidence=float(payload.get("confidence") or 0.0),
+        first_spoken_line=payload.get("first_spoken_line"),
+        duration_seconds=float(payload["duration_seconds"]) if payload.get("duration_seconds") is not None else None,
+        scene_change_count=int(payload["scene_change_count"]) if payload.get("scene_change_count") is not None else None,
+        average_shot_duration_seconds=float(payload["average_shot_duration_seconds"]) if payload.get("average_shot_duration_seconds") is not None else None,
+        reveal_timestamp_seconds=float(payload["reveal_timestamp_seconds"]) if payload.get("reveal_timestamp_seconds") is not None else None,
+        caption_density=float(payload["caption_density"]) if payload.get("caption_density") is not None else None,
+        motion_score=float(payload["motion_score"]) if payload.get("motion_score") is not None else None,
+        pacing_score=float(payload["pacing_score"]) if payload.get("pacing_score") is not None else None,
+        music_cue_count=int(payload["music_cue_count"]) if payload.get("music_cue_count") is not None else None,
+        editing_pattern=payload.get("editing_pattern"),
+        visual_features=dict(payload.get("visual_features") or {}),
+    )
+
+
+def _persisted_media_records(repository: ResearchRepository, run_id: str) -> dict[str, BrowserMediaRecord]:
+    records: dict[str, BrowserMediaRecord] = {}
+    for row, youtube_video_id in repository.browser_media_rows(run_id):
+        feature = dict(row.feature_payload or {})
+        records[youtube_video_id] = _media_from_payload({
+            "source_profile": row.source_profile,
+            "is_short_presentation": row.is_short_presentation,
+            "visible_transcript": row.visible_transcript,
+            "thumbnail_ref": row.thumbnail_ref,
+            "frame_refs": row.frame_refs,
+            "opening_visual_summary": row.opening_visual_summary,
+            "caption_style": row.caption_style,
+            "observable_structure": row.observable_structure,
+            "observed_at": row.observed_at,
+            "confidence": row.confidence,
+            **feature,
+        })
+    return records
+
+
+def _persisted_video_records(repository: ResearchRepository, run_id: str) -> list[VideoRecord]:
+    records: dict[str, VideoRecord] = {}
+    for video, snapshot, channel in repository.video_rows_for_run(run_id):
+        records[video.youtube_video_id] = preprocess_video(VideoRecord(
+            youtube_video_id=video.youtube_video_id,
+            channel_id=channel.youtube_channel_id if channel is not None else "unknown-channel",
+            canonical_url=video.canonical_url,
+            title=video.title,
+            description=video.description,
+            duration_seconds=video.duration_seconds,
+            published_at=_checkpoint_datetime(video.published_at) or video.published_at,
+            category_id=video.category_id,
+            tags=list(video.tags or []),
+            thumbnails=dict(video.thumbnails or {}),
+            view_count=int(snapshot.view_count or 0),
+            like_count=snapshot.like_count,
+            comment_count=snapshot.comment_count,
+        ))
+    return list(records.values())
+
+
+def _checkpoint_datetime(value: Any) -> datetime | None:
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return value if value.tzinfo is not None else value.replace(tzinfo=timezone.utc)
+    normalized = str(value).replace("Z", "+00:00")
+    parsed = datetime.fromisoformat(normalized)
+    return parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=timezone.utc)
+
+
+def _comparison_checkpoint_key(assessment_format: RequestedFormat, pair: dict[str, Any]) -> str:
+    return f"{assessment_format.value}:{pair['winner']['id']}:{pair['loser']['id']}"
+
+
+def _candidate_checkpoint_key(
+    assessment_format: RequestedFormat,
+    cluster_label: str,
+    video_ids: list[str],
+) -> str:
+    identity = json.dumps(
+        [assessment_format.value, cluster_label, sorted(video_ids)],
+        separators=(",", ":"),
+    )
+    return f"{assessment_format.value}:{hashlib.sha256(identity.encode('utf-8')).hexdigest()[:20]}"
 
 
 def _combined_metric(label: str, shorts: dict[str, Any], longform: dict[str, Any], count_key: str) -> dict[str, Any]:
