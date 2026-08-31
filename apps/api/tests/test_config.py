@@ -102,10 +102,11 @@ def test_zero_key_live_smoke_request_keeps_canonical_clip_gate(monkeypatch):
     assert request.limits.max_queries == 1
 
 
-def test_heavy_media_limit_has_an_absolute_six_video_ceiling():
-    assert Settings(media_max_videos_per_run=6).media_max_videos_per_run == 6
+def test_heavy_media_limit_defaults_to_six_and_is_operator_configurable():
+    assert Settings().media_max_videos_per_run == 6
+    assert Settings(media_max_videos_per_run=12).media_max_videos_per_run == 12
     with pytest.raises(ValueError):
-        Settings(media_max_videos_per_run=7)
+        Settings(media_max_videos_per_run=0)
 
 
 def test_asset_fanout_limits_are_operator_configurable_but_hard_capped():

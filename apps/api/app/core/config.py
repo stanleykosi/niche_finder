@@ -58,7 +58,7 @@ class Settings(BaseModel):
     deepgram_model: str = "nova-3"
     media_download_enabled: bool = True
     media_max_duration_seconds: int = Field(default=900, ge=30, le=7200)
-    media_max_videos_per_run: int = Field(default=6, ge=1, le=6)
+    media_max_videos_per_run: int = Field(default=6, ge=1)
     media_work_root: str = ".runtime/media"
     media_derived_retention_hours: int = Field(default=24, ge=1, le=720)
     media_max_storage_gb: float = Field(default=5.0, gt=0, le=1024)

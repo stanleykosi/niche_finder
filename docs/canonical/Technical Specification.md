@@ -650,13 +650,15 @@ Select pairs deterministically before AI interpretation. A valid pair shares a c
 
 ### Visual and viral-mechanism analysis
 
-Browser media observations persist first spoken line, transcript, frame references, opening visual, captions, structure, duration, scene/pacing proxies, reveal timing, motion and visual features. Analyze at most six representative videos per run. OpenRouter may receive local screenshots as multimodal image inputs and must return the `VisualStructureAnalysis` JSON schema. Fake AI supplies deterministic closed fixtures; Ollama receives actual bounded image bytes and fails cleanly when no decodable image is available. The deterministic zero-key live provider likewise reads actual bounded image inputs and limits its claims to decoded/query-provenance facts.
+Browser media observations persist first spoken line, transcript, frame references, opening visual, captions, structure, duration, scene/pacing proxies, reveal timing, motion and visual features. Analyze an operator-configured number of representative videos per run, defaulting to six. OpenRouter may receive local screenshots as multimodal image inputs and must return the `VisualStructureAnalysis` JSON schema. Fake AI supplies deterministic closed fixtures; Ollama receives actual bounded image bytes and fails cleanly when no decodable image is available. The deterministic zero-key live provider likewise reads actual bounded image inputs and limits its claims to decoded/query-provenance facts.
 
-The six-video limit applies before any download, Deepgram request, ffmpeg
-extraction, or other heavy media work. Representative selection is
-deterministic: prioritize views/day while taking one video per channel before
-filling remaining slots. Lightweight browser observations may still cover the
-bounded upload set.
+The configured heavy-media limit applies before any download, Deepgram request,
+ffmpeg extraction, or other heavy media work. It has no hard-coded six-video
+ceiling; the research request's bounded video set remains the outer limit.
+Representative selection is deterministic: prioritize views/day while taking
+one video per channel before filling remaining slots. Heavy targets execute
+sequentially and raw media is deleted after each analysis. Lightweight browser
+observations may still cover the bounded upload set.
 
 ### Keyless channel traversal and direct inputs
 

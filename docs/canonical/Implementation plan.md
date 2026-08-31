@@ -610,8 +610,9 @@ Implement before the next closed gate:
    only closed fixture runs synchronous.
 3. Expand a bounded channel `/videos` feed through yt-dlp when no YouTube Data
    API key is configured, then enrich the de-duplicated upload IDs.
-4. Select at most six channel-diverse, high-velocity representative videos
-   before download, transcription, and filmstrip extraction.
+4. Select an operator-configured number of channel-diverse, high-velocity
+   representative videos, defaulting to six, before download, transcription,
+   and filmstrip extraction; process them sequentially with per-video cleanup.
 5. Route direct YouTube video/channel URLs without search encoding and hash all
    browser screenshot filenames.
 6. Add deterministic unit/integration regressions for every item above, update

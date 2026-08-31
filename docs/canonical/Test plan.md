@@ -346,8 +346,10 @@ Review-remediation regressions additionally prove that uploads older than the
 supporting window cannot enter outlier baselines; non-closed API requests return
 in queued state without invoking the orchestrator; ARQ submission is
 idempotently keyed and closes its Redis pool; keyless channel expansion is
-playlist-bounded; heavy media target selection never exceeds six and preserves
-channel diversity; and direct URL screenshot names cannot create nested paths.
+playlist-bounded; heavy media target selection honors the operator-configured
+limit (including values above the six-video default), preserves channel
+diversity, and remains sequential with per-video cleanup; and direct URL
+screenshot names cannot create nested paths.
 The suite also constructs the Compose PostgreSQL dialect without connecting,
 proving the Psycopg driver is installed; verifies `upload_date` normalization
 and rejection of unknown publication dates; proves video descriptions never

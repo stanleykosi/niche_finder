@@ -225,9 +225,11 @@ disk. Per-run artifact history is available at
 In keyless mode, yt-dlp traverses a bounded `/videos` feed for every retained
 channel so channel baselines and winner/loser comparisons do not depend on
 search coincidences. Browser filmstrip capture, video download, transcription,
-and derived-frame work is capped at six channel-diverse representative videos
-per run. Closed runs execute synchronously;
-all other modes enqueue Redis/ARQ work and immediately return a pollable run ID.
+and derived-frame work defaults to six channel-diverse representative videos
+per run and is operator-configurable. Heavy media is processed sequentially and
+each raw download is removed before the next target. Closed runs execute
+synchronously; all other modes enqueue Redis/ARQ work and immediately return a
+pollable run ID.
 
 All analytics require a real publication timestamp; undated YouTube API and
 yt-dlp entries are excluded with source-typed diagnostics, never treated as

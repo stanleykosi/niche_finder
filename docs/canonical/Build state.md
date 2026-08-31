@@ -26,7 +26,49 @@ gate is green. Live verification remains separately gated and has not run.
 Vercel/Railway deployment preparation was completed on `2026-08-31`. The
 hosted boundary is Next.js on Vercel plus FastAPI, ARQ, managed PostgreSQL, and
 managed Redis on Railway. The complete closed gate is green after the changes;
-no hosting provider or live research source was contacted in this phase.
+no hosting provider or live research source was contacted in that preparation
+phase.
+
+The Vercel frontend production deployment completed on `2026-08-31`. Project
+`niche-intel-web` is Git-linked to `stanleykosi/niche_finder`, builds from
+`apps/web` on `main`, and serves `https://niche-intel-web.vercel.app` with a
+verified `200 OK`. Production deployment
+`dpl_8uBDRVP3nmSFRTYLD99BBAjYaKiX` is `READY`; its browser bundle contains
+`NEXT_PUBLIC_API_BASE_URL=https://api-production-21e27.up.railway.app`; and the
+Railway health route permits the exact canonical Vercel origin. The live gate
+has not run.
+
+Railway production deployment completed on `2026-08-31` in project
+`merry-solace` after the user authorized permanent removal of its obsolete
+`seeder`, `getway`, and `hydradb` services and HydraDB volume. The replacement
+topology keeps FastAPI, ARQ, private PostgreSQL, and private Redis in one
+project. All four services report `SUCCESS`; Alembic reached revision `0009`;
+`https://api-production-21e27.up.railway.app/health` returns `live_test`; and
+the worker publishes its mounted-volume status through Redis. The free-plan
+500 MB worker volume uses a bounded hosted-smoke profile: 0.3 GB managed media,
+0.05 GB free-space floor, 100 MB unknown-download reservation, two media videos,
+and 600-second maximum duration.
+
+Live credential configuration was verified on `2026-08-31` without exposing
+secret values. The API and worker have matching nonempty YouTube Data API,
+OpenRouter, Deepgram, Pexels, and Pixabay credentials; bounded authentication
+or one-result metadata checks returned HTTP 200 from all five providers. The
+configured OpenRouter text model supports JSON-schema structured output and
+the configured vision model accepts images and structured output. Both code
+services redeployed successfully, Chromium remains healthy, and the worker
+publishes its mounted-volume status. The Railway workspace is on the Hobby
+tier, whose 0.5 GB per-volume ceiling prevents expanding `worker-runtime` until
+the workspace is upgraded; the live research gate itself has not run.
+
+The heavy-media run limit remediation completed its closed gate on
+`2026-08-31`. The operator default remains six, but configuration is no longer
+rejected above six. Representative selection still applies the configured
+bound before heavy work, while the worker continues to download, analyze, and
+remove each raw video sequentially so the configured target count does not
+multiply local disk occupancy. The complete gate passed with 245 backend
+tests, 12 frontend tests, one Playwright end-to-end test, the strict Next.js
+build, PostgreSQL migrations, Redis/API/ARQ/fixture/Chromium integration, and
+zero live services contacted. The live `storytelling` run remains pending.
 
 ## Implementation checklist
 
@@ -68,6 +110,8 @@ no hosting provider or live research source was contacted in this phase.
 | Evidence UI | COMPLETE | Source/timestamp/confidence ledger including browser transcripts, frames, and provenance |
 | Docker Compose | COMPLETE | Internally network-isolated Postgres, Redis, migrated API, healthy ARQ worker, frontend, fixture server, and optional Ollama profile |
 | Vercel/Railway deployment | COMPLETE | Vercel app-root config, one-shot Railway migration plus worker revision gate, Railway-compatible API image/port, hosted Postgres URL normalization, configurable CORS, worker-owned volume/status boundary, and deployment runbook verified by the complete closed gate |
+| Vercel frontend production | COMPLETE | Git-linked `apps/web` project is deployed from `main`; production is `READY`; canonical domain returned `200 OK`; Railway API URL is embedded in the browser bundle and exact-origin CORS is verified |
+| Railway production runtime | COMPLETE | API, private ARQ worker, private PostgreSQL, and private Redis are healthy in one project; migration reached 0009, API health is verified, and worker storage status is published |
 | Makefile/scripts | COMPLETE | Closed/live tooling plus a schema-valid Python seed-demo payload with no request on import |
 | README/environment docs | COMPLETE | Setup, live gate, evidence and safety docs |
 | Test fixtures | COMPLETE | Date-anchored API/browser/AI/assets plus rejection scenarios |

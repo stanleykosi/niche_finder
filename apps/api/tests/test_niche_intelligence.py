@@ -166,11 +166,12 @@ def test_outlier_baseline_excludes_uploads_older_than_supporting_window():
     assert rates[historical_low_rate.youtube_video_id] not in cohorts[key]
 
 
-def test_heavy_media_targets_are_bounded_and_channel_diverse():
+def test_heavy_media_targets_honor_the_configured_bound_and_channel_diversity():
     items = [video(f"v{index}", 100_000 - index * 1000, 5 + index, channel=f"channel-{index % 8}") for index in range(20)]
     selected = _select_representative_media_ids(items, 6)
     assert len(selected) == 6
     assert len({item.channel_id for item in items if item.youtube_video_id in selected}) == 6
+    assert len(_select_representative_media_ids(items, 12)) == 12
 
 
 def test_mechanism_replication_counts_only_channels_in_supporting_evidence():
