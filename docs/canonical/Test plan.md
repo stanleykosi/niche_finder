@@ -342,7 +342,10 @@ Storage lifecycle tests prove that raw video exists during transcription and
 frame extraction, disappears afterward, is also deleted on transcription
 failure, retained frames carry SHA-256/size/expiry metadata, expired browser
 and media artifacts are removed, and storage ceilings reject work before a
-download process starts.
+download process starts. A source-unavailable media download returns explicit
+browser-only partial evidence, releases its reservation, and permits the next
+representative target to run; a missing executable remains a typed fatal
+configuration error.
 
 Review-remediation regressions additionally prove that uploads older than the
 supporting window cannot enter outlier baselines; non-closed API requests return

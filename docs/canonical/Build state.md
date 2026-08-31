@@ -85,6 +85,21 @@ end-to-end test, the strict Next.js build, PostgreSQL migrations, and the full
 local stack with zero live services contacted. The replacement live run is
 pending.
 
+The replacement hosted `storytelling` attempt
+`cf477e6d-1b4b-42d3-9aeb-3b5595225059` confirmed the Chromium hydration
+repair and advanced through discovery, clip preflight, enrichment, and
+sequential browser inspection. It then failed on one representative video's
+bounded yt-dlp download because YouTube challenged the Railway datacenter IP.
+The run-isolated Chromium profile's safe rejected-consent cookies were tested
+against metadata-only yt-dlp access and received the same challenge, so they
+are not being reused as a false remedy. Remediation is in progress to preserve
+the browser observation as explicit partial evidence and continue to later
+videos while retaining fatal behavior for configuration errors. That repair
+has now passed the complete closed gate with 249 backend tests, 12 frontend
+tests, one Playwright end-to-end test, the strict Next.js build, PostgreSQL
+migrations, and the full local stack with zero live services contacted;
+Railway redeployment and the next live attempt are pending.
+
 ## Implementation checklist
 
 | Area | Status | Notes |
@@ -148,7 +163,24 @@ The niche-finding accuracy expansion, keyless live path, Deepgram/selective-film
 Required implementation files, fixtures, tests, scripts, UI, and docs have been written. Live sources are gated from closed mode.
 
 ### Closed test
-`CLOSED_TEST_GREEN — CURRENT THREE-FINDING DEPLOYMENT REMEDIATION`
+`CLOSED_TEST_GREEN — CURRENT MEDIA SOURCE-FAILURE REMEDIATION`
+
+Current media source-failure remediation verification record:
+- command: `PATH=/home/stanley/niche_finder/.venv/bin:/home/stanley/.nvm/versions/node/v20.19.4/bin:$PATH make closed-test`;
+- date: `2026-08-31`;
+- result: `249 Python tests passed; frontend smoke passed; 12 Vitest tests
+  passed; strict Next.js 15 production build/type checking passed; fresh
+  PostgreSQL migrations through 0009 passed; PostgreSQL, Redis, FastAPI, ARQ,
+  fixture, and Next.js boundaries passed; Chromium fixture-site probe passed;
+  1 full-stack Playwright UI submission/report/candidate/evidence E2E passed;
+  live services contacted 0`;
+- per-video yt-dlp source unavailability is retained as explicit browser-only
+  partial evidence and releases its download reservation before later targets;
+- missing media executables retain their typed fatal configuration boundary;
+- Docker was unavailable in this WSL environment, so the strict local
+  six-process fallback verified the same service boundaries.
+
+Prior verified gate:
 
 Current three-finding deployment remediation verification record:
 - command: `PATH=/home/stanley/niche_finder/.venv/bin:/home/stanley/.nvm/versions/node/v20.19.4/bin:$PATH make closed-test`;
@@ -501,12 +533,16 @@ Evidence-bound LLM reasoning record:
 - authority boundary: AI can interpret evidence, reduce confidence, or block a positive result. It cannot calculate authoritative metrics, pass a failed gate, promote a deterministic verdict, cite records outside the run ledger, or invent unavailable transcript timestamps.
 
 ### Live test
-`NOT_RUN`
+`IN_PROGRESS`
 
-Must not run until Closed test is `CLOSED_TEST_GREEN`.
+The closed gate was green before each live attempt. Hosted run
+`636b16d9-fd9e-4e1e-baad-bcf4b4528607` exposed the Chromium hydration race;
+hosted run `cf477e6d-1b4b-42d3-9aeb-3b5595225059` verified that repair and then
+exposed a per-video yt-dlp bot challenge. The media partial-evidence repair is
+closed-test green and awaits deployment before the next live attempt.
 
 ## Current blockers
-None in the implementation or closed-mode product flow. Use `nvm use` before `make closed-test`; frontend dependencies and the exact Playwright Chromium revision are mandatory and validated. Docker is not integrated with this WSL environment, so the closed runner automatically boots fresh PostgreSQL, Redis, FastAPI, ARQ, fixture, and Next.js processes locally; the isolated Docker Compose path remains preferred and implemented. Live verification remains `NOT_RUN`. A zero-key smoke requires Chromium, yt-dlp, ffmpeg, and network access; the recommended accurate run also configures OpenRouter and Deepgram, with the YouTube Data API and asset/trend providers optional.
+None in the implementation or closed-mode product flow. Use `nvm use` before `make closed-test`; frontend dependencies and the exact Playwright Chromium revision are mandatory and validated. Docker is not integrated with this WSL environment, so the closed runner automatically boots fresh PostgreSQL, Redis, FastAPI, ARQ, fixture, and Next.js processes locally; the isolated Docker Compose path remains preferred and implemented. Live verification is in progress. A zero-key smoke requires Chromium, yt-dlp, ffmpeg, and network access; the recommended accurate run also configures OpenRouter and Deepgram, with the YouTube Data API and asset/trend providers optional.
 
 ## Architectural deviations
 - The control plane uses synchronous SQLAlchemy sessions with a SQLite closed-mode fallback so the complete fixture suite can run without Docker/PostgreSQL drivers. PostgreSQL/pgvector URLs, SQLAlchemy models, and the Compose service remain the deployment path. Affected files: `apps/api/app/db/session.py`, `apps/api/app/repositories/store.py`.

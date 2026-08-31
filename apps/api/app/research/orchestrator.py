@@ -235,6 +235,31 @@ class ResearchOrchestrator:
                         self.artifacts.register(frame_path, "browser_screenshot", run_id, self.settings.browser_artifact_retention_hours, {"video_id": video.youtube_video_id})
                 media_by_video[video.youtube_video_id] = media
                 self.repository.add_browser_media(run_id, model.id, media)
+                if media.visual_features.get("deepgram_status") == "download_unavailable":
+                    self.repository.add_evidence(run_id, {
+                        "evidence_type": "media_analysis_unavailable",
+                        "source_type": SourceType.KEYLESS_YTDLP.value,
+                        "source_entity_id": video.youtube_video_id,
+                        "observed_at": media.observed_at,
+                        "payload": {
+                            "video_id": video.youtube_video_id,
+                            "channel_id": video.channel_id,
+                            "status": "partial_browser_only",
+                            "reason": media.visual_features.get("media_download_error"),
+                            "error_code": media.visual_features.get("media_download_error_code"),
+                            "partial": True,
+                            "missing_fields": [
+                                "deepgram_transcript",
+                                "word_timestamps",
+                                "ffmpeg_frames",
+                            ],
+                        },
+                        "confidence": 0.0,
+                        "human_readable_summary": (
+                            f"Heavy media analysis for {video.title} was unavailable; "
+                            "browser evidence was retained and the run continued."
+                        ),
+                    })
                 self.repository.add_evidence(run_id, {
                     "evidence_type": "browser_media_observation",
                     "source_type": "fixture_browser" if self.settings.uses_fixture_sources else "browser",

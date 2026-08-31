@@ -179,6 +179,60 @@ def test_raw_and_partial_download_are_deleted_when_transcription_fails(tmp_path)
     assert repository.runtime_artifacts("run-4")[0].state == "deleted"
 
 
+def test_unavailable_media_download_returns_explicit_browser_only_partial(tmp_path):
+    settings, repository, manager = setup(tmp_path, deepgram_api_key="fixture-key")
+    analyzer = DeepgramVideoAnalyzer(settings, manager)
+
+    async def challenged_download(*args, **kwargs):  # noqa: ARG001
+        raise NicheIntelError("Sign in to confirm you're not a bot", ErrorCode.SOURCE_UNAVAILABLE)
+
+    analyzer._run = challenged_download
+    video = VideoRecord(
+        "v3", "c1", "https://youtube.com/watch?v=v3", "Test", "", 40,
+        datetime.now(timezone.utc), None, [], {}, 10,
+    )
+    browser = BrowserMediaRecord(
+        "browser", True, "Visible captions", None, [], "A visible opening", None,
+        ["hook", "proof"], datetime.now(timezone.utc), .7,
+    )
+
+    result = asyncio.run(analyzer.analyze("run-1", video, browser))
+
+    assert result.visible_transcript == "Visible captions"
+    assert result.opening_visual_summary == "A visible opening"
+    assert result.visual_features["deepgram_status"] == "download_unavailable"
+    assert result.visual_features["heavy_media_analysis"] == "partial_browser_only"
+    assert result.visual_features["media_download_error_code"] == ErrorCode.SOURCE_UNAVAILABLE.value
+    assert "not a bot" in result.visual_features["media_download_error"]
+    assert manager.status()["reserved_download_bytes"] == 0
+    assert not list((Path(settings.media_work_root) / "run-1" / "downloads").glob("*"))
+    assert repository.runtime_artifacts("run-1") == []
+
+
+def test_missing_download_executable_remains_a_fatal_configuration_error(tmp_path):
+    settings, _, manager = setup(tmp_path, deepgram_api_key="fixture-key")
+    analyzer = DeepgramVideoAnalyzer(settings, manager)
+
+    async def missing_ytdlp(*args, **kwargs):  # noqa: ARG001
+        raise NicheIntelError("required media tool is missing: yt-dlp", ErrorCode.CONFIGURATION)
+
+    analyzer._run = missing_ytdlp
+    video = VideoRecord(
+        "v4", "c1", "https://youtube.com/watch?v=v4", "Test", "", 40,
+        datetime.now(timezone.utc), None, [], {}, 10,
+    )
+    browser = BrowserMediaRecord(
+        "browser", False, None, None, [], None, None, [],
+        datetime.now(timezone.utc), .6,
+    )
+
+    with pytest.raises(NicheIntelError) as raised:
+        asyncio.run(analyzer.analyze("run-2", video, browser))
+
+    assert raised.value.code == ErrorCode.CONFIGURATION
+    assert manager.status()["reserved_download_bytes"] == 0
+
+
 def test_media_process_is_killed_and_reaped_before_cancellation_propagates(monkeypatch):
     started = asyncio.Event()
     reaped = asyncio.Event()

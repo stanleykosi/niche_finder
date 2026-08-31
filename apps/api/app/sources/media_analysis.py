@@ -53,22 +53,37 @@ class DeepgramVideoAnalyzer:
         media_path = workspace["downloads"] / f"{video.youtube_video_id}.mp4"
         reservation = self.artifacts.reserve_download()
         try:
-            await self._run([
-                self.settings.ytdlp_executable,
-                "--no-playlist",
-                "--no-part",
-                "--max-filesize",
-                str(reservation.reserved_bytes),
-                "-f",
-                "b[height<=720][ext=mp4]/b[height<=720]",
-                "-o",
-                str(media_path),
-                video.canonical_url,
-            ], 300, output_path=media_path, maximum_bytes=reservation.reserved_bytes)
-            if not media_path.is_file():
-                raise NicheIntelError(
-                    "media download was unavailable within the reserved size limit",
-                    ErrorCode.SOURCE_UNAVAILABLE,
+            try:
+                await self._run([
+                    self.settings.ytdlp_executable,
+                    "--no-playlist",
+                    "--no-part",
+                    "--max-filesize",
+                    str(reservation.reserved_bytes),
+                    "-f",
+                    "b[height<=720][ext=mp4]/b[height<=720]",
+                    "-o",
+                    str(media_path),
+                    video.canonical_url,
+                ], 300, output_path=media_path, maximum_bytes=reservation.reserved_bytes)
+                if not media_path.is_file():
+                    raise NicheIntelError(
+                        "media download was unavailable within the reserved size limit",
+                        ErrorCode.SOURCE_UNAVAILABLE,
+                    )
+            except NicheIntelError as exc:
+                if exc.code == ErrorCode.CONFIGURATION:
+                    raise
+                return replace(
+                    browser,
+                    visual_features={
+                        **browser.visual_features,
+                        "deepgram_status": "download_unavailable",
+                        "heavy_media_analysis": "partial_browser_only",
+                        "media_download_error_code": exc.code.value,
+                        "media_download_error": exc.message,
+                        "english_likelihood": english_likelihood(browser.visible_transcript),
+                    },
                 )
             self.artifacts.register(media_path, "raw_video", run_id, None, {"video_id": video.youtube_video_id, "purpose": "Deepgram transcription and selective frame extraction"})
             # The raw file remains present through every operation below.

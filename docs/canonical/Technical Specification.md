@@ -605,6 +605,11 @@ bounded by the run's video/candidate limits, and each candidate remains capped
 at 30 asset ideas.
 
 Live video analysis uses Deepgram prerecorded STT (`nova-3`, English) over a bounded yt-dlp download and six selective ffmpeg frames. This adopts video-use's transcript-first/on-demand-visual principle without coupling the engine to its editing CLI. Missing Deepgram configuration is explicit and falls back only to visible browser transcripts; it is never represented as a full transcript.
+An individual source-level download challenge, private video, or otherwise
+unavailable media stream becomes explicit browser-only partial evidence and
+does not abort analysis of later videos. Missing media executables and other
+configuration failures remain fatal rather than being mislabeled as source
+unavailability.
 
 ### Runtime media lifecycle
 
