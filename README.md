@@ -158,7 +158,7 @@ OPENROUTER_API_KEY=...
 OPENROUTER_MODEL=openrouter/free
 OPENROUTER_VISION_MODEL=<optional vision-capable model; defaults to the main model>
 OPENROUTER_MAX_RETRIES=3
-OPENROUTER_REQUEST_TIMEOUT_SECONDS=300
+OPENROUTER_REQUEST_TIMEOUT_SECONDS=900
 DEEPGRAM_API_KEY=... # optional but required for full word-timestamp transcripts
 DEEPGRAM_MODEL=nova-3
 # Optional live clip preflight. Configure both for the required two-source diversity.

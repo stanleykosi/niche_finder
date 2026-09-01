@@ -85,6 +85,8 @@ Chromium Worker   YouTube API Worker   AI Worker    Asset Connectors
 - Optional OpenRouter structured-output provider
 - One configurable total deadline per OpenRouter structured request, including
   its bounded retries, so a stalled upstream cannot hold a run indefinitely
+- Default OpenRouter structured-request total deadline: 900 seconds; allowed
+  configuration range: 5 to 1800 seconds
 - Deterministic fake provider for closed testing
 - Structured Pydantic outputs only
 - Embeddings provider interface

@@ -199,6 +199,14 @@ Pydantic validation failures are now typed retryable within the existing
 five-minute total deadline. The same-ID run remains checkpointed for the next
 hosted attempt.
 
+Attempt 5 completed three full candidate editor/critic evaluations and
+checkpointed the fourth editor synthesis before its critic exhausted the
+configured 300-second OpenRouter total deadline. Because the provider remained
+healthy but slow, the hosted worker variable and application default are now
+900 seconds with three retries inside that single total budget. Attempt 6 will
+resume at the fourth critic checkpoint rather than repeat any completed
+candidate or video work.
+
 ## Implementation checklist
 
 | Area | Status | Notes |
