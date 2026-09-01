@@ -13,6 +13,8 @@ import asyncio
 from pathlib import Path
 from typing import Any
 
+from pydantic import ValidationError
+
 from .schemas import (
     CandidateSynthesis,
     CriticAssessment,
@@ -212,6 +214,8 @@ def _local_image_data_url(ref: str) -> str | None:
 
 
 def _retryable(exc: Exception) -> bool:
+    if isinstance(exc, (json.JSONDecodeError, ValidationError)):
+        return True
     value = str(exc).lower()
     return any(token in value for token in (
         "408", "409", "429", "500", "502", "503", "504", "timeout",

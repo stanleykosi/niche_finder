@@ -207,6 +207,24 @@ def test_openrouter_retries_transient_failure_then_returns_structured_output():
     assert FakeClient.chat.calls == 2
 
 
+def test_openrouter_retries_truncated_json_then_returns_structured_output():
+    class FakeChat:
+        calls = 0
+
+        async def send_async(self, **request):
+            self.calls += 1
+            if self.calls == 1:
+                return {"choices": [{"message": {"content": '{"broad_market":"Education'}}]}
+            return {"choices": [{"message": {"content": '{"broad_market":"Education","niche":"Tests","sub_niche":"Household","repeatable_format":"Proof","confidence":0.8}'}}]}
+
+    class FakeClient:
+        chat = FakeChat()
+
+    provider = OpenRouterProvider(api_key="fixture-key", client=FakeClient(), max_retries=1)
+    assert asyncio.run(provider.classify_niche("evidence", [])).niche == "Tests"
+    assert FakeClient.chat.calls == 2
+
+
 def test_openrouter_normalizes_provider_idea_array_without_losing_fields():
     class FakeChat:
         async def send_async(self, **request):

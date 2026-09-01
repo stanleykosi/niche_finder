@@ -348,6 +348,9 @@ momentum, and observational winner/loser caveats.
 OpenRouter provider tests additionally prove the SDK receives the configured
 request timeout and the application enforces one total deadline across all
 attempts, including a client coroutine that never returns.
+They also prove truncated JSON (including an unterminated string) and Pydantic
+schema-invalid payloads retry inside that deadline rather than failing after
+the first response.
 
 Storage lifecycle tests prove that raw video exists during transcription and
 frame extraction, disappears afterward, is also deleted on transcription

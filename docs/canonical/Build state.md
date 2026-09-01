@@ -190,6 +190,15 @@ platform interruption queued for redelivery. The explicit resume endpoint now
 also permits a cancelled run to be resumed under its existing ID; complete runs
 remain immutable. Hosted verification is pending.
 
+Attempt 4 ran on the lightweight worker and reached the next structured-AI
+boundary without a memory or Chromium failure, then OpenRouter returned
+truncated JSON with `Unterminated string`. The retry classifier previously
+matched selected decoder message fragments rather than `JSONDecodeError`
+itself, so this valid retry case failed after one attempt. JSON decode and
+Pydantic validation failures are now typed retryable within the existing
+five-minute total deadline. The same-ID run remains checkpointed for the next
+hosted attempt.
+
 ## Implementation checklist
 
 | Area | Status | Notes |

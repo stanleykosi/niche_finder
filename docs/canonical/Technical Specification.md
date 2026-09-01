@@ -788,6 +788,12 @@ checkpoint. Raw video is still deleted in the per-video `finally` boundary;
 checkpoint state contains normalized metadata and derived observations, never
 the downloaded media file.
 
+Malformed or truncated JSON and schema-invalid structured responses are
+retryable within the same provider and the same configured total deadline.
+JSON decoder subclasses are classified directly rather than by matching error
+message text, so errors such as `Unterminated string` receive the configured
+retry opportunity.
+
 Worker coroutine cancellation is not itself proof of user intent: Railway
 deployment SIGTERM and ARQ retry use the same asyncio signal as an explicit job
 abort. The worker refreshes the database and records a terminal cancellation
