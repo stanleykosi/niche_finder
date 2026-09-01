@@ -162,7 +162,8 @@ Do not run tests.
 Implement the Playwright research worker.
 
 Required capabilities:
-- launch persistent Chromium context
+- launch a persistent Chromium context against a unique disposable user-data
+  directory for each operation
 - choose research profile
 - bounded query execution
 - collect search-result observations
@@ -177,6 +178,8 @@ Required capabilities:
 - retry limits
 - tab limits
 - scroll limits
+- preserve screenshots separately from browser session state and sweep legacy
+  locks/caches without deleting unexpired evidence images
 
 Build a local fixture web application/server that simulates:
 - YouTube search page

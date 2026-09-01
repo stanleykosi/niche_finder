@@ -228,6 +228,9 @@ Expected separate assessments.
 - skip completed video and structured-AI steps while replaying unfinished work
 - requeue an active orphan automatically when the hosted worker restarts
 - keep raw-video deletion and download-reservation release unconditional
+- resume successfully when the preceding container left a legacy Chromium
+  `SingletonLock`; every new browser launch uses a different disposable
+  user-data directory
 
 ## 8. Browser integration test
 Run Chromium against the local fixture site.
@@ -351,7 +354,10 @@ and media artifacts are removed, and storage ceilings reject work before a
 download process starts. A source-unavailable media download returns explicit
 browser-only partial evidence, releases its reservation, and permits the next
 representative target to run; a missing executable remains a typed fatal
-configuration error.
+configuration error. Legacy Chromium locks/caches in the browser artifact root
+are swept while fresh screenshot evidence is retained; a transient browser
+launch failure is recorded as explicit partial evidence rather than aborting
+the remaining pipeline.
 
 Review-remediation regressions additionally prove that uploads older than the
 supporting window cannot enter outlier baselines; non-closed API requests return

@@ -6,6 +6,7 @@ import asyncio
 from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from typing import Any
 from urllib.parse import parse_qs, urlencode, urlparse
 import re
@@ -118,7 +119,7 @@ class PlaywrightBrowserSource:
             raise NicheIntelError(f"browser discovery unavailable: {type(exc).__name__}", ErrorCode.SOURCE_UNAVAILABLE) from exc
 
     async def _discover_once(self, request: DiscoveryRequest) -> DiscoveryResult:
-        from playwright.async_api import async_playwright  # type: ignore
+        from playwright.async_api import Error as PlaywrightError, async_playwright  # type: ignore
         url, direct_kind = _discovery_target(
             request.query,
             request.requested_format,
@@ -127,64 +128,79 @@ class PlaywrightBrowserSource:
             recency_days=request.recency_days,
         )
         self.validate_url(url)
-        async with async_playwright() as playwright:
-            context = await playwright.chromium.launch_persistent_context(
-                str(self.profile_root / request.profile_id),
-                headless=self.settings.browser_headless,
-                executable_path=self.settings.browser_executable_path,
-                locale=_browser_locale(request.language, request.region),
-            )
-            page = await context.new_page()
-            await page.goto(url, wait_until="domcontentloaded")
-            results = []
-            if direct_kind == "video":
-                await _reject_optional_youtube_consent(page)
-                from .base import SearchResult
-                video_id = _direct_video_id(url)
-                title_meta = page.locator("meta[name='title'], meta[property='og:title']").first
-                title = await title_meta.get_attribute("content") if await title_meta.count() else await page.title()
-                channel_link = page.locator("ytd-video-owner-renderer a[href*='/@'], ytd-video-owner-renderer a[href*='/channel/']").first
-                channel_href = await channel_link.get_attribute("href") if await channel_link.count() else ""
-                channel_title = (await channel_link.inner_text()).strip() if await channel_link.count() else ""
-                results.append(SearchResult(
-                    video_id, url, title or video_id, (channel_href or "").rstrip("/").split("/")[-1], channel_title,
-                    "", "", "/shorts/" in urlparse(url).path, 1,
-                    raw_payload={"direct_input": True, "youtube_presented_as_short": "/shorts/" in urlparse(url).path},
-                ))
-            else:
-                await _prepare_search_results(page)
-            for _ in range(min(3, self.settings.browser_max_results_per_query // 10 + 1)):
-                await page.mouse.wheel(0, 800)
-                await page.wait_for_timeout(250)
-            cards = await page.locator(VIDEO_CARD_SELECTOR).all()
-            seen: set[str] = {item.canonical_url for item in results}
-            for position, card in enumerate(cards, start=1):
-                href = await card.get_attribute("href")
-                title = (await card.get_attribute("title")) or (await card.inner_text())
-                canonical_url = _absolute_youtube_url(href or "")
-                if not href or canonical_url in seen:
-                    continue
-                seen.add(canonical_url)
-                is_short = "/shorts/" in urlparse(canonical_url).path
-                video_id = _direct_video_id(canonical_url)
-                if not video_id:
-                    continue
-                from .base import SearchResult
-                container = card.locator(VIDEO_CARD_CONTAINER_XPATH).first
-                card_text = await container.inner_text() if await container.count() else ""
-                channel_link = container.locator("a[href*='/@'], a[href*='/channel/']").first
-                channel_href = await channel_link.get_attribute("href") if await channel_link.count() else ""
-                channel_title = (await channel_link.inner_text()).strip() if await channel_link.count() else ""
-                channel_id = (channel_href or "").rstrip("/").split("/")[-1]
-                views = next((line for line in card_text.splitlines() if "view" in line.lower()), "")
-                age = next((line for line in card_text.splitlines() if re.search(r"\b(hour|day|week|month|year)s? ago\b", line.lower())), "")
-                results.append(SearchResult(video_id, canonical_url, title, channel_id, channel_title, views, age, is_short, position, raw_payload={"youtube_presented_as_short": is_short, "card_text": card_text[:1000], "direct_input": direct_kind is not None}))
-                if len(results) >= request.max_results:
-                    break
-            screenshot = str(self.profile_root / request.profile_id / f"search-{_safe_name(request.query)}.png")
-            await page.screenshot(path=screenshot)
-            results = _attach_screenshot(results, screenshot)
-            await context.close()
+        artifact_dir = self._artifact_directory(request.profile_id)
+        # Browser state is intentionally disposable. Persisting Chromium's
+        # user-data directory on the Railway volume also persists SingletonLock
+        # files across container replacement and makes checkpoint resume fail.
+        with TemporaryDirectory(
+            prefix=f"niche-discovery-{_safe_name(request.profile_id)}-",
+            ignore_cleanup_errors=True,
+        ) as session_dir:
+            async with async_playwright() as playwright:
+                context = await playwright.chromium.launch_persistent_context(
+                    session_dir,
+                    headless=self.settings.browser_headless,
+                    executable_path=self.settings.browser_executable_path,
+                    locale=_browser_locale(request.language, request.region),
+                )
+                try:
+                    page = await context.new_page()
+                    await page.goto(url, wait_until="domcontentloaded")
+                    results = []
+                    if direct_kind == "video":
+                        await _reject_optional_youtube_consent(page)
+                        from .base import SearchResult
+                        video_id = _direct_video_id(url)
+                        title_meta = page.locator("meta[name='title'], meta[property='og:title']").first
+                        title = await title_meta.get_attribute("content") if await title_meta.count() else await page.title()
+                        channel_link = page.locator("ytd-video-owner-renderer a[href*='/@'], ytd-video-owner-renderer a[href*='/channel/']").first
+                        channel_href = await channel_link.get_attribute("href") if await channel_link.count() else ""
+                        channel_title = (await channel_link.inner_text()).strip() if await channel_link.count() else ""
+                        results.append(SearchResult(
+                            video_id, url, title or video_id, (channel_href or "").rstrip("/").split("/")[-1], channel_title,
+                            "", "", "/shorts/" in urlparse(url).path, 1,
+                            raw_payload={"direct_input": True, "youtube_presented_as_short": "/shorts/" in urlparse(url).path},
+                        ))
+                    else:
+                        await _prepare_search_results(page)
+                    for _ in range(min(3, self.settings.browser_max_results_per_query // 10 + 1)):
+                        await page.mouse.wheel(0, 800)
+                        await page.wait_for_timeout(250)
+                    cards = await page.locator(VIDEO_CARD_SELECTOR).all()
+                    seen: set[str] = {item.canonical_url for item in results}
+                    for position, card in enumerate(cards, start=1):
+                        href = await card.get_attribute("href")
+                        title = (await card.get_attribute("title")) or (await card.inner_text())
+                        canonical_url = _absolute_youtube_url(href or "")
+                        if not href or canonical_url in seen:
+                            continue
+                        seen.add(canonical_url)
+                        is_short = "/shorts/" in urlparse(canonical_url).path
+                        video_id = _direct_video_id(canonical_url)
+                        if not video_id:
+                            continue
+                        from .base import SearchResult
+                        container = card.locator(VIDEO_CARD_CONTAINER_XPATH).first
+                        card_text = await container.inner_text() if await container.count() else ""
+                        channel_link = container.locator("a[href*='/@'], a[href*='/channel/']").first
+                        channel_href = await channel_link.get_attribute("href") if await channel_link.count() else ""
+                        channel_title = (await channel_link.inner_text()).strip() if await channel_link.count() else ""
+                        channel_id = (channel_href or "").rstrip("/").split("/")[-1]
+                        views = next((line for line in card_text.splitlines() if "view" in line.lower()), "")
+                        age = next((line for line in card_text.splitlines() if re.search(r"\b(hour|day|week|month|year)s? ago\b", line.lower())), "")
+                        results.append(SearchResult(video_id, canonical_url, title, channel_id, channel_title, views, age, is_short, position, raw_payload={"youtube_presented_as_short": is_short, "card_text": card_text[:1000], "direct_input": direct_kind is not None}))
+                        if len(results) >= request.max_results:
+                            break
+                    screenshot = str(artifact_dir / f"search-{_safe_name(request.query)}.png")
+                    await page.screenshot(path=screenshot)
+                    results = _attach_screenshot(results, screenshot)
+                finally:
+                    try:
+                        await asyncio.wait_for(
+                            context.close(), timeout=BROWSER_SHUTDOWN_TIMEOUT_SECONDS
+                        )
+                    except (PlaywrightError, TimeoutError):
+                        pass
         return DiscoveryResult(source=SourceType.BROWSER, query=request.query, results=results, screenshot_refs=[screenshot])
 
     async def inspect_video(self, video_id: str, canonical_url: str | None = None, profile_id: str = "research", capture_frames: bool = True) -> BrowserMediaRecord:
@@ -196,45 +212,60 @@ class PlaywrightBrowserSource:
             from playwright.async_api import Error as PlaywrightError, async_playwright  # type: ignore
         except ImportError as exc:
             raise NicheIntelError("Playwright is not installed; install the browser extra", ErrorCode.CONFIGURATION) from exc
-        manager = async_playwright()
-        playwright = await manager.start()
-        context = None
-        try:
+        artifact_dir = self._artifact_directory(profile_id)
+        with TemporaryDirectory(
+            prefix=f"niche-inspection-{_safe_name(profile_id)}-",
+            ignore_cleanup_errors=True,
+        ) as session_dir:
+            manager = async_playwright()
+            playwright = await manager.start()
+            context = None
             try:
-                context = await asyncio.wait_for(
-                    playwright.chromium.launch_persistent_context(
-                        str(self.profile_root / profile_id),
-                        headless=self.settings.browser_headless,
-                        executable_path=self.settings.browser_executable_path,
-                    ),
-                    timeout=VIDEO_PAGE_NAVIGATION_TIMEOUT_MS / 1_000,
-                )
-            except (PlaywrightError, TimeoutError) as exc:
-                raise NicheIntelError(f"Chromium inspection profile could not start: {type(exc).__name__}", ErrorCode.CONFIGURATION) from exc
-            try:
-                return await self._inspect_video_context(context, video_id, url, profile_id, capture_frames)
-            except PlaywrightError as exc:
-                detail = " ".join(str(exc).split())[-300:]
-                raise NicheIntelError(
-                    f"browser video inspection unavailable for {video_id}: {type(exc).__name__}: {detail}",
-                    ErrorCode.SOURCE_UNAVAILABLE,
-                ) from exc
-        finally:
-            if context is not None:
+                try:
+                    context = await asyncio.wait_for(
+                        playwright.chromium.launch_persistent_context(
+                            session_dir,
+                            headless=self.settings.browser_headless,
+                            executable_path=self.settings.browser_executable_path,
+                        ),
+                        timeout=VIDEO_PAGE_NAVIGATION_TIMEOUT_MS / 1_000,
+                    )
+                except (PlaywrightError, TimeoutError) as exc:
+                    raise NicheIntelError(
+                        f"Chromium inspection profile could not start: {type(exc).__name__}",
+                        ErrorCode.SOURCE_UNAVAILABLE,
+                    ) from exc
+                try:
+                    return await self._inspect_video_context(
+                        context, video_id, url, profile_id, artifact_dir, capture_frames
+                    )
+                except PlaywrightError as exc:
+                    detail = " ".join(str(exc).split())[-300:]
+                    raise NicheIntelError(
+                        f"browser video inspection unavailable for {video_id}: {type(exc).__name__}: {detail}",
+                        ErrorCode.SOURCE_UNAVAILABLE,
+                    ) from exc
+            finally:
+                if context is not None:
+                    try:
+                        await asyncio.wait_for(
+                            context.close(), timeout=BROWSER_SHUTDOWN_TIMEOUT_SECONDS
+                        )
+                    except (PlaywrightError, TimeoutError):
+                        pass
                 try:
                     await asyncio.wait_for(
-                        context.close(), timeout=BROWSER_SHUTDOWN_TIMEOUT_SECONDS
+                        playwright.stop(), timeout=BROWSER_SHUTDOWN_TIMEOUT_SECONDS
                     )
                 except (PlaywrightError, TimeoutError):
                     pass
-            try:
-                await asyncio.wait_for(
-                    playwright.stop(), timeout=BROWSER_SHUTDOWN_TIMEOUT_SECONDS
-                )
-            except (PlaywrightError, TimeoutError):
-                pass
 
-    async def _inspect_video_context(self, context: Any, video_id: str, url: str, profile_id: str, capture_frames: bool = True) -> BrowserMediaRecord:
+    def _artifact_directory(self, profile_id: str) -> Path:
+        directory = self.profile_root / _safe_name(profile_id)
+        directory.mkdir(parents=True, exist_ok=True)
+        return directory
+
+    async def _inspect_video_context(self, context: Any, video_id: str, url: str, profile_id: str, artifact_dir: Path, capture_frames: bool = True) -> BrowserMediaRecord:
         from playwright.async_api import Error as PlaywrightError  # type: ignore
 
         page = await context.new_page()
@@ -294,7 +325,7 @@ class PlaywrightBrowserSource:
                     await page.wait_for_timeout(250)
                 except Exception:
                     pass
-            screenshot = str(self.profile_root / profile_id / f"video-{video_id}-{index}.png")
+            screenshot = str(artifact_dir / f"video-{video_id}-{index}.png")
             try:
                 await page.screenshot(
                     path=screenshot,

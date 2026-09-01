@@ -151,9 +151,23 @@ class RuntimeArtifactManager:
                 continue
         screenshot_cutoff = observed.timestamp() - self.settings.browser_artifact_retention_hours * 3600
         profile_cutoff = observed.timestamp() - self.settings.browser_profile_retention_days * 86400
+        image_suffixes = {".png", ".jpg", ".jpeg", ".webp"}
         for path in self.browser_root.rglob("*"):
             try:
-                if path.is_file() and path.suffix.lower() in {".png", ".jpg", ".jpeg", ".webp"} and path.stat().st_mtime < screenshot_cutoff:
+                if path.is_symlink():
+                    # Legacy persistent profiles left Chromium SingletonLock
+                    # symlinks behind when Railway replaced a container.
+                    reclaimed += path.lstat().st_size
+                    path.unlink(missing_ok=True)
+                    deleted += 1
+                elif path.is_file() and path.suffix.lower() not in image_suffixes:
+                    # Browser session state/cache is disposable and must not
+                    # consume the persistent volume. Only evidence images have
+                    # a retention window.
+                    reclaimed += path.stat().st_size
+                    path.unlink(missing_ok=True)
+                    deleted += 1
+                elif path.is_file() and path.stat().st_mtime < screenshot_cutoff:
                     reclaimed += path.stat().st_size
                     path.unlink(missing_ok=True)
                     deleted += 1

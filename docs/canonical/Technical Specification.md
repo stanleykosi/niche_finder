@@ -488,9 +488,17 @@ Requirements:
 Profiles are stored under `BROWSER_PROFILE_ROOT`.
 
 A profile contains:
-- persistent Chromium state
-- YouTube locale/language settings where configured
+- retained screenshot evidence
+- YouTube locale/language provenance where configured
 - research profile metadata
+
+Chromium user-data state is launch-isolated and disposable. Each discovery or
+video inspection uses a unique temporary user-data directory, while retained
+screenshots are written to the stable research profile directory. Container
+replacement must therefore never carry a Chromium `SingletonLock`, cache, or
+cookie database into a checkpoint-resume attempt. Startup cleanup removes
+legacy non-image browser state from the persistent artifact root while
+preserving unexpired screenshot evidence.
 
 Do not store Google passwords in the application database.
 
@@ -637,6 +645,8 @@ another sample is unavailable.
   partial processing. Never rely only on a successful terminal run state.
 - Retain selected frames for a configurable 24-hour default. Persist transcript,
   timestamps, checksums, size, expiry, derived observations, and deletion state.
+- Keep Chromium user-data/cache on ephemeral storage and delete it after every
+  browser operation; persist only registered screenshot evidence.
 - Sweep expired media/browser artifacts at startup, after terminal runs, and
   through `make cleanup-runtime`.
 - Reject a download before starting when its reserve would exceed the runtime

@@ -1,11 +1,15 @@
 import asyncio
 import inspect
+from datetime import datetime, timezone
 
 import httpx
 
 from apps.api.app.core.config import AppMode, Settings
+from apps.api.app.db.session import Database
 from apps.api.app.main import create_app
 from apps.api.app.api import routes
+from apps.api.app.repositories.store import ResearchRepository
+from apps.api.app.storage.artifacts import RuntimeArtifactManager
 
 
 def test_api_boundary_creates_and_reads_closed_run(tmp_path):
@@ -158,6 +162,38 @@ def test_non_closed_api_reports_worker_storage_without_touching_local_artifact_r
     asyncio.run(exercise())
     assert not media_root.exists()
     assert not browser_root.exists()
+
+
+def test_worker_cleanup_removes_legacy_browser_state_but_retains_fresh_evidence_images(
+    tmp_path,
+):
+    runtime_root = tmp_path / "runtime"
+    settings = Settings(
+        app_mode=AppMode.CLOSED_TEST,
+        ai_provider="fake",
+        database_url=f"sqlite:///{tmp_path / 'artifact-cleanup.db'}",
+        media_work_root=str(runtime_root / "media"),
+        browser_profile_root=str(runtime_root / "browser"),
+    )
+    database = Database(settings)
+    database.create_schema()
+    repository = ResearchRepository(database.session())
+    manager = RuntimeArtifactManager(settings, repository)
+    legacy_profile = manager.browser_root / "research-interrupted-3"
+    legacy_profile.mkdir(parents=True)
+    (legacy_profile / "Cookies").write_text("browser cache", encoding="utf-8")
+    (legacy_profile / "SingletonLock").symlink_to("stale-container-3225")
+    screenshot = legacy_profile / "video-example-0.png"
+    screenshot.write_bytes(b"retained evidence")
+
+    result = manager.cleanup_expired(datetime.now(timezone.utc))
+
+    assert result.files_deleted == 2
+    assert not (legacy_profile / "Cookies").exists()
+    assert not (legacy_profile / "SingletonLock").exists()
+    assert screenshot.read_bytes() == b"retained evidence"
+    repository.session.close()
+    database.engine.dispose()
 
 
 def test_non_closed_request_repository_session_is_closed(tmp_path):

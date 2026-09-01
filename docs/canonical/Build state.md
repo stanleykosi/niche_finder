@@ -159,6 +159,17 @@ concurrency is one, the ARQ job timeout is four hours, and `tini` is PID 1 for
 hosted child-process reaping. The thirteen persisted videos in run `e79d...`
 remain the intended resume source; they are not scheduled for re-download.
 
+The first checkpoint-resume deployment reached attempt 2 and proved that the
+same run ID and thirteen completed videos were retained, then exposed a legacy
+Chromium profile lock from the replaced container. The persistent volume still
+contained a `SingletonLock` naming dead PID 3225, so Chromium refused to open
+the first unfinished video. The browser adapter now separates stable evidence
+directories from unique disposable user-data directories, startup cleanup
+removes legacy browser locks/caches but preserves screenshots, and a transient
+Chromium launch failure degrades one video to explicit partial evidence instead
+of failing the full run. Hosted redeployment and same-ID attempt 3 verification
+are pending; no local test or research workload was run.
+
 ## Implementation checklist
 
 | Area | Status | Notes |
@@ -171,7 +182,7 @@ remain the intended resume source; they are not scheduled for re-download.
 | YouTube API source | COMPLETE | Typed optional adapter, every-attempt quota accounting, 403 quota taxonomy, diagnostics, retries, and <=50-ID batching |
 | Keyless YouTube metadata | COMPLETE | Channel-feed isolation, sparse channel identity/title retention, canonical diagnostic URLs, typed failures, strict dates, and positive aspect validation |
 | YouTube fixture source | COMPLETE | Strong, one-hit, saturated, stale fixtures |
-| Chromium source | COMPLETE | Run-isolated profiles, locale/region/recency discovery, channel rich/grid extraction, disabled-browser API routing, query-safe direct URLs, bounded captures, and partial results |
+| Chromium source | COMPLETE | Disposable launch-isolated user-data directories, retained evidence-only profiles, locale/region/recency discovery, channel rich/grid extraction, disabled-browser API routing, query-safe direct URLs, bounded captures, and partial results |
 | Browser fixture source/site | COMPLETE | Local YouTube-shaped pages and semantic fixture adapter |
 | Quota manager | COMPLETE | Atomic database-backed daily ledger shared by API and every ARQ worker; Pacific-midnight rollover and one status view for search/video/channel/playlist/comment units |
 | Source router | COMPLETE | Development/closed fixture provenance plus live rules that consume probed browser/API capability health and execute audited API fallback |
