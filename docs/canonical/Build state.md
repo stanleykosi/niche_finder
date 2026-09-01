@@ -181,6 +181,15 @@ have been removed. This preserves reproducible cosine clustering/deduplication
 without loading learned weights. Hosted verification is pending; no local test,
 build, browser, or research process was run.
 
+The Railway agent's forced restart during the unsuccessful memory-limit change
+then exposed a cancellation/redelivery ambiguity: ARQ scheduled the interrupted
+attempt again, but the old worker persisted `cancelled` for the deployment
+SIGTERM, causing the redelivery to no-op. The worker now refreshes authoritative
+run state on `CancelledError`, preserves API-requested cancellation, and marks
+platform interruption queued for redelivery. The explicit resume endpoint now
+also permits a cancelled run to be resumed under its existing ID; complete runs
+remain immutable. Hosted verification is pending.
+
 ## Implementation checklist
 
 | Area | Status | Notes |

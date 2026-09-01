@@ -788,6 +788,14 @@ checkpoint. Raw video is still deleted in the per-video `finally` boundary;
 checkpoint state contains normalized metadata and derived observations, never
 the downloaded media file.
 
+Worker coroutine cancellation is not itself proof of user intent: Railway
+deployment SIGTERM and ARQ retry use the same asyncio signal as an explicit job
+abort. The worker refreshes the database and records a terminal cancellation
+only when the API has already persisted `cancelled`; otherwise it leaves the
+task queued/recoverable for checkpoint redelivery. The explicit resume endpoint
+may resume a failed or cancelled run under the same ID; completed runs remain
+immutable.
+
 Hosted schema changes run as a one-shot/pre-deploy Alembic migration. Before
 ARQ can dequeue any job, worker startup polls the shared database and requires
 its recorded Alembic revision set to equal the code's migration heads. A failed,

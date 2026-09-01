@@ -397,3 +397,43 @@ def test_failed_non_closed_run_resumes_same_id_and_preserves_evidence(tmp_path, 
         ]
     finally:
         verification_session.close()
+
+
+def test_cancelled_non_closed_run_can_be_explicitly_resumed(tmp_path, monkeypatch):
+    settings = Settings(
+        app_mode=AppMode.DEVELOPMENT,
+        ai_provider="fake",
+        redis_url="redis://fixture",
+        database_url=f"sqlite:///{tmp_path / 'resume-cancelled.db'}",
+    )
+    app = create_app(settings)
+    setup_session = app.state.db.session()
+    repository = routes.ResearchRepository(setup_session)
+    run = repository.create_run(routes.ResearchRunCreate(seeds=["storytelling"]))
+    repository.ensure_task_job(run.id)
+    repository.update_task_job(run.id, "cancelled", increment_attempt=True)
+    repository.transition(
+        run,
+        "cancelled",
+        "platform interruption misclassified by an old worker",
+    )
+    run_id = run.id
+    setup_session.close()
+    submissions = []
+
+    async def fake_enqueue(redis_url, enqueue_run_id, **kwargs):
+        submissions.append((enqueue_run_id, kwargs["attempt"]))
+        return f"research:{enqueue_run_id}:attempt:{kwargs['attempt']}"
+
+    monkeypatch.setattr(routes, "enqueue_research_run", fake_enqueue)
+
+    async def exercise():
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+            response = await client.post(f"/api/research-runs/{run_id}/resume")
+            assert response.status_code == 200
+            assert response.json()["id"] == run_id
+            assert response.json()["status"] == "queued"
+
+    asyncio.run(exercise())
+    assert submissions == [(run_id, 2)]

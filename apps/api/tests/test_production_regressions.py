@@ -200,7 +200,7 @@ def test_worker_context_has_no_shared_session_or_orchestrator(monkeypatch):
     assert WorkerSettings.allow_abort_jobs is True
 
 
-def test_aborted_worker_job_finishes_cancelled_with_job_scoped_state(monkeypatch):
+def test_platform_interrupted_worker_job_remains_queued_for_redelivery(monkeypatch):
     run = SimpleNamespace(id="run-1", status="queued", failure_reason=None)
 
     class Session:
@@ -208,6 +208,9 @@ def test_aborted_worker_job_finishes_cancelled_with_job_scoped_state(monkeypatch
 
         def close(self):
             self.closed = True
+
+        def expire_all(self):
+            pass
 
     session = Session()
 
@@ -241,7 +244,53 @@ def test_aborted_worker_job_finishes_cancelled_with_job_scoped_state(monkeypatch
     ctx = {"settings": SimpleNamespace(), "database": SimpleNamespace(session=lambda: session)}
     with pytest.raises(asyncio.CancelledError):
         asyncio.run(run_research(ctx, run.id))
-    assert run.status == "cancelled"
+    assert run.status == "queued"
+    assert repository.task_updates[-1][1] == "queued"
+    assert session.closed is True
+
+
+def test_user_cancelled_worker_job_remains_terminal_on_abort(monkeypatch):
+    run = SimpleNamespace(id="run-user-cancelled", status="queued", failure_reason=None)
+
+    class Session:
+        closed = False
+
+        def close(self):
+            self.closed = True
+
+        def expire_all(self):
+            pass
+
+    session = Session()
+
+    class Repository:
+        task_updates = []
+
+        def __init__(self, _session):
+            self.session = _session
+
+        def get_run(self, run_id):
+            assert run_id == run.id
+            return run
+
+        def task_job(self, run_id):
+            return SimpleNamespace(attempts=0)
+
+        def update_task_job(self, run_id, status, error=None, increment_attempt=False):
+            self.task_updates.append((run_id, status, increment_attempt))
+
+    repository = Repository(session)
+
+    class Orchestrator:
+        async def execute(self, item):
+            item.status = "cancelled"
+            raise asyncio.CancelledError
+
+    monkeypatch.setattr("workers.research.worker.ResearchRepository", lambda _session: repository)
+    monkeypatch.setattr("workers.research.worker.create_orchestrator", lambda settings, repo: Orchestrator())
+    ctx = {"settings": SimpleNamespace(), "database": SimpleNamespace(session=lambda: session)}
+    with pytest.raises(asyncio.CancelledError):
+        asyncio.run(run_research(ctx, run.id))
     assert repository.task_updates[-1][1] == "cancelled"
     assert session.closed is True
 

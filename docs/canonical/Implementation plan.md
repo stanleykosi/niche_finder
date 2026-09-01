@@ -268,6 +268,8 @@ Requirements:
   steps, candidate asset validation, and report synthesis
 - automatic active-run recovery after a hosted worker restart plus an explicit
   same-run resume control for failed jobs
+- distinguish platform SIGTERM/redelivery from an API-persisted user
+  cancellation, and allow explicit same-ID recovery of cancelled runs
 - retries preserve evidence and completed media derivations while rebuilding
   only incomplete relational analysis output
 - no duplicate work in same run

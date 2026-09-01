@@ -150,8 +150,8 @@ async def resume_research_run(run_id: UUID, request: Request, repository: Reposi
     run = repository.get_run(run_id)
     if run is None:
         raise HTTPException(status_code=404, detail="research run not found")
-    if run.status in {"complete", "cancelled"}:
-        raise HTTPException(status_code=409, detail=f"a {run.status} run cannot be resumed")
+    if run.status == "complete":
+        raise HTTPException(status_code=409, detail="a complete run cannot be resumed")
     if request.app.state.settings.is_closed:
         run = repository.prepare_run_for_resume(run.id)
         try:

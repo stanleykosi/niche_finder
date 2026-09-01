@@ -231,6 +231,8 @@ Expected separate assessments.
 - resume successfully when the preceding container left a legacy Chromium
   `SingletonLock`; every new browser launch uses a different disposable
   user-data directory
+- prove Railway-style SIGTERM leaves a run queued for ARQ redelivery, while an
+  API-persisted user cancellation remains terminal until explicitly resumed
 
 ## 8. Browser integration test
 Run Chromium against the local fixture site.

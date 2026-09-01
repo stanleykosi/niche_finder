@@ -39,9 +39,20 @@ async def run_research(ctx: dict, run_id: str) -> str:
                 orchestrator.artifacts.cleanup_run_temporary(run_id)
             await orchestrator.execute(run)
         except asyncio.CancelledError:
-            if run.status != "cancelled":
-                repository.transition(run, "cancelled", "research job aborted")
-            repository.update_task_job(run_id, "cancelled")
+            # ARQ uses cancellation both for an explicit abort and for normal
+            # SIGTERM/redelivery during a Railway deploy. Only the API-written
+            # database state proves user intent; a platform interruption must
+            # leave the run recoverable for ARQ's retry or startup recovery.
+            repository.session.expire_all()
+            persisted = repository.get_run(run_id)
+            if persisted is not None and persisted.status == "cancelled":
+                repository.update_task_job(run_id, "cancelled")
+            else:
+                repository.update_task_job(
+                    run_id,
+                    "queued",
+                    "worker interrupted; awaiting checkpoint redelivery",
+                )
             raise
         except Exception as exc:
             if run.status not in {"failed", "cancelled"}:
