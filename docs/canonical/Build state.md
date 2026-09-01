@@ -22,7 +22,7 @@ This file is the execution ledger for Codex. The canonical source remains the do
 - LIVE_TEST_GREEN
 
 ## Overall
-`CLOSED_TEST_GREEN`
+`LIVE_TEST_GREEN`
 
 Three-finding hosted migration/artifact/SQLite remediation is implemented and
 the complete closed gate is green. Worker startup is now gated on the shared
@@ -202,10 +202,34 @@ hosted attempt.
 Attempt 5 completed three full candidate editor/critic evaluations and
 checkpointed the fourth editor synthesis before its critic exhausted the
 configured 300-second OpenRouter total deadline. Because the provider remained
-healthy but slow, the hosted worker variable and application default are now
-900 seconds with three retries inside that single total budget. Attempt 6 will
-resume at the fourth critic checkpoint rather than repeat any completed
-candidate or video work.
+healthy but slow, the hosted worker variable and application default were
+raised to 900 seconds with three retries inside that single total budget. Attempt 6
+resumed at the fourth critic checkpoint rather than repeating any completed
+candidate or video work, but a later candidate exhausted that 900-second
+budget. The hosted variable was raised to the validated 1,800-second ceiling,
+and attempt 7 resumed the same run ID from the unfinished candidate checkpoint.
+
+The live `storytelling` run
+`e79d2381-d785-4ee7-bfb6-a17190faad90` completed successfully on
+`2026-09-01T20:28:59Z`. It examined 30 videos across 12 channels, completed 24
+semantic-cluster editor/critic evaluations, assembled them into 23 ranked
+candidates, retained 261 public evidence records, and produced the final
+report and action plan. All 24 candidate mechanisms, deterministic packets,
+editor syntheses, and critic reviews were checkpointed. The final report did
+not greenlight a niche: no candidate passed all eight immutable gates, no
+candidate passed more than three, and the cited portfolio confidence was 0.24.
+The top-ranked Comedy/Reaction-Humor Shorts concept remained footage-constrained
+with confidence 0.194 and only one passing gate.
+
+Hosted failure and recovery evidence verified same-ID checkpoint resume across
+worker restarts, platform cancellation/redelivery, Chromium-profile lock
+cleanup, malformed OpenRouter JSON, and both 300- and 900-second provider
+deadlines. One final critic required about 19.5 minutes and another editor call
+completed just under 30 minutes, validating the 1,800-second production
+default. Raw media had already been deleted sequentially after extraction;
+final worker metrics remained about 0.12 GB memory and 0.061 GB disk under the
+unchanged 1 GB memory limit, confirming that the earlier failure was the
+removed heavyweight embedding runtime rather than retained video files.
 
 ## Implementation checklist
 
@@ -677,18 +701,16 @@ Evidence-bound LLM reasoning record:
 - authority boundary: AI can interpret evidence, reduce confidence, or block a positive result. It cannot calculate authoritative metrics, pass a failed gate, promote a deterministic verdict, cite records outside the run ledger, or invent unavailable transcript timestamps.
 
 ### Live test
-`IN_PROGRESS`
+`LIVE_TEST_GREEN`
 
-The closed gate was green before each live attempt. Hosted run
-`636b16d9-fd9e-4e1e-baad-bcf4b4528607` exposed the Chromium hydration race;
-hosted run `cf477e6d-1b4b-42d3-9aeb-3b5595225059` verified that repair and then
-exposed a per-video yt-dlp bot challenge. Hosted run
-`6e9a4976-47c5-44a0-bbf4-46884e0626bd` verified the media partial-evidence
-repair and then isolated cumulative watch-page Chromium timeouts. The
-video-page remediation passed its hosted five-frame probe; run
-`87ade25c-371e-4046-80eb-af86be2a1bfa` then exposed an unbounded OpenRouter SDK
-wait. Its deadline remediation is verified through the next hosted deployment
-and live attempt under the current execution policy.
+Hosted run `e79d2381-d785-4ee7-bfb6-a17190faad90` completed end to end on
+Railway using live YouTube API, Chromium, OpenRouter, Deepgram, Pexels, and
+Pixabay configuration. The completed report is deliberately negative: 30
+videos and 12 channels yielded 24 cluster evaluations and 23 ranked candidates,
+but no candidate cleared all eight recommendation gates. This is a successful
+live pipeline validation, not a positive niche recommendation. No application,
+browser, test, build, or research workload was executed on the editing
+workstation.
 
 ## Current blockers
 None in the editing environment. Local dependency installation and local

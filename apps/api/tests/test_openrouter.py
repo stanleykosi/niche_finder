@@ -157,7 +157,7 @@ def test_openrouter_provider_uses_structured_schema_without_network():
     assert result.niche == "Tests"
     assert captured["model"] == "openrouter/free"
     assert captured["stream"] is False
-    assert captured["timeout_ms"] == 900000
+    assert captured["timeout_ms"] == 1800000
     assert captured["response_format"]["type"] == "json_schema"
     assert captured["provider"]["require_parameters"] is True
 
