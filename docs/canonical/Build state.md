@@ -141,8 +141,9 @@ The subsequent hosted attempts exposed two independent durability faults. Run
 `e79d2381-d785-4ee7-bfb6-a17190faad90` persisted thirteen completed video
 observations before the 1 GB worker reached its memory ceiling; raw downloads
 had already been deleted sequentially and worker disk usage remained about
-0.12 GB, so this was memory pressure rather than a storage leak. Railway now
-provides the worker 2 GB. Replacement run
+0.12 GB, so this was memory pressure rather than a storage leak. A requested
+Railway 2 GB replica override did not persist: hosted metrics continued to show
+a 1 GB limit after the config commit and restart. Replacement run
 `660496c9-4cab-44f0-8413-38cd6c2ee61c` then received a complete OpenRouter idea
 list at the JSON root instead of the requested object wrapper.
 
@@ -170,6 +171,16 @@ Chromium launch failure degrades one video to explicit partial evidence instead
 of failing the full run. Hosted redeployment and same-ID attempt 3 verification
 are pending; no local test or research workload was run.
 
+Attempt 3 then confirmed the production worker still had a 1 GB memory limit:
+baseline usage reached about 0.87 GB while disk usage fell to about 0.058 GB.
+The live sentence-transformers adapter was the unnecessary resident-memory and
+image-size cost. Hosted and fixture clustering now share a deterministic
+384-dimensional lexical/bigram/character-fragment provider, and unused
+sentence-transformers, Torch/CUDA, NumPy, scikit-learn, and Polars dependencies
+have been removed. This preserves reproducible cosine clustering/deduplication
+without loading learned weights. Hosted verification is pending; no local test,
+build, browser, or research process was run.
+
 ## Implementation checklist
 
 | Area | Status | Notes |
@@ -190,7 +201,7 @@ are pending; no local test or research workload was run.
 | Discovery pipeline | COMPLETE | Every bounded portfolio market is observed before cross-market round-robin selection; total capacity reserves two history slots per retained discovery channel |
 | Enrichment pipeline | COMPLETE | Channel feeds request at least three records when operator bounds permit and merge uploads round-robin into three-record performance cohorts |
 | Deterministic analytics | COMPLETE | Separate media cohorts, configured labels/gates, and display-only historical uploads excluded from downstream decision cohorts |
-| Embeddings/clustering | COMPLETE | Shared semantic provider for topic-within-format clustering and idea deduplication; deterministic fixture vectors plus live sentence-transformers |
+| Embeddings/clustering | COMPLETE | Shared deterministic 384-dimensional lexical/bigram/character-fragment vectors for topic-within-format clustering and idea deduplication; no learned runtime or heavyweight ML dependency |
 | AI provider abstraction | COMPLETE | Semantic image validation is an explicit capability; structure-only deterministic inspection reports semantics/reveal as unavailable and cannot pass the clip gate |
 | OpenRouter provider | COMPLETE | Optional SDK provider with structured schemas, bounded transient retries, and clean failure |
 | Ollama provider | COMPLETE | Exact Pydantic JSON-Schema HTTP provider with mandatory base64 image inputs, bounded transient retries, and same-provider structured repair |

@@ -88,7 +88,7 @@ Chromium Worker   YouTube API Worker   AI Worker    Asset Connectors
 - Deterministic fake provider for closed testing
 - Structured Pydantic outputs only
 - Embeddings provider interface
-- Default local embeddings: sentence-transformers
+- Default embeddings: deterministic hashed lexical, bigram, and character-fragment vectors with no learned runtime
 
 ### Analytics
 - Python deterministic functions
@@ -234,8 +234,6 @@ OPENROUTER_HTTP_REFERER=
 OPENROUTER_APP_TITLE=YouTube Niche Intelligence Engine
 OLLAMA_BASE_URL=http://ollama:11434
 OLLAMA_MODEL=
-EMBEDDING_MODEL=sentence-transformers/all-MiniLM-L6-v2
-
 CLOSED_TEST_BLOCK_NETWORK=true
 ```
 

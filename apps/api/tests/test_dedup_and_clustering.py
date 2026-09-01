@@ -1,5 +1,6 @@
 from apps.api.app.research.dedup import canonical_video_id, deduplicate_ideas, semantic_key
 from apps.api.app.analytics.clustering import cluster_videos
+from apps.api.app.ai.embeddings import DeterministicEmbeddingsProvider
 from apps.api.app.sources.fixture_youtube import FixtureYoutubeSource
 from apps.api.app.sources.base import VideoRecord
 import asyncio
@@ -29,6 +30,20 @@ def test_semantic_dedup_collapses_paraphrases_with_different_token_sets():
         "Which surface stops a spinning coin fastest?",
     ]
     assert deduplicate_ideas(ideas) == [ideas[0], ideas[2]]
+
+
+def test_live_deterministic_embeddings_match_storytelling_variants():
+    provider = DeterministicEmbeddingsProvider()
+    story, narration, unrelated = provider.embed([
+        "faceless storytelling channel",
+        "narrated stories with voiceover",
+        "daily football transfer analysis",
+    ])
+
+    def similarity(left, right):
+        return sum(a * b for a, b in zip(left, right))
+
+    assert similarity(story, narration) > similarity(story, unrelated)
 
 
 def test_same_format_is_partitioned_into_semantic_topic_clusters():

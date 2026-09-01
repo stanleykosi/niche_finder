@@ -314,8 +314,8 @@ Do not run tests.
 Implement:
 - text normalization
 - embeddings provider
-- local sentence-transformers adapter
-- deterministic fake embeddings for closed testing
+- one deterministic hashed lexical/character-fragment embedding provider for
+  hosted and fixture execution
 - video/topic clustering
 - format clustering
 - representative-video selection

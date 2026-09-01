@@ -7,7 +7,7 @@ from ..ai.fake import FakeAIProvider
 from ..ai.deterministic_live import DeterministicLiveAIProvider
 from ..ai.openrouter import OpenRouterProvider
 from ..ai.ollama import OllamaProvider
-from ..ai.embeddings import FakeEmbeddingsProvider, SentenceTransformersProvider
+from ..ai.embeddings import DeterministicEmbeddingsProvider, FakeEmbeddingsProvider
 from ..core.config import AppMode, Settings
 from ..repositories.store import ResearchRepository
 from ..sources.assets import FixtureAssetConnector, LiveAssetConnector
@@ -122,7 +122,11 @@ def create_orchestrator(
         assets = FixtureAssetConnector()
         trends = DisabledTrendConnector()
         media_analyzer = PassthroughMediaAnalyzer()
-    embeddings = FakeEmbeddingsProvider() if settings.uses_fixture_sources else SentenceTransformersProvider(settings.embedding_model)
+    embeddings = (
+        FakeEmbeddingsProvider()
+        if settings.uses_fixture_sources
+        else DeterministicEmbeddingsProvider()
+    )
     source_health = None
     if settings.app_mode in {AppMode.LIVE_TEST, AppMode.PRODUCTION}:
         source_health = lambda: (_browser_capability(settings)[0], bool(settings.youtube_api_key))

@@ -15,10 +15,6 @@ dependencies = [
   "redis>=5.0",
   "arq>=0.28",
   "playwright>=1.45",
-  "polars>=1.0",
-  "numpy>=2.0",
-  "scikit-learn>=1.5",
-  "sentence-transformers>=3.0",
 ]
 
 [project.optional-dependencies]

@@ -49,7 +49,6 @@ class Settings(BaseModel):
     ollama_base_url: str = "http://localhost:11434"
     ollama_model: str | None = None
     ollama_max_retries: int = Field(default=3, ge=0, le=8)
-    embedding_model: str = "sentence-transformers/all-MiniLM-L6-v2"
     pexels_api_key: str | None = None
     pixabay_api_key: str | None = None
     wikimedia_user_agent: str = "NicheIntel/1.0 (research tool)"
@@ -203,7 +202,6 @@ class Settings(BaseModel):
             "ollama_base_url": env.get("OLLAMA_BASE_URL", "http://localhost:11434"),
             "ollama_model": env.get("OLLAMA_MODEL") or None,
             "ollama_max_retries": env.get("OLLAMA_MAX_RETRIES", 3),
-            "embedding_model": env.get("EMBEDDING_MODEL", "sentence-transformers/all-MiniLM-L6-v2"),
             "pexels_api_key": env.get("PEXELS_API_KEY") or None,
             "pixabay_api_key": env.get("PIXABAY_API_KEY") or None,
             "wikimedia_user_agent": env.get("WIKIMEDIA_USER_AGENT") or "NicheIntel/1.0 (research tool)",

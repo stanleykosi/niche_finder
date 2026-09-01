@@ -109,7 +109,7 @@ Include a test that deliberately attempts an external connection and proves it i
 - semantic idea duplicates
 
 ### Clustering
-- deterministic fixture embeddings
+- deterministic fixture and live embeddings
 - stable cluster assignment
 - representative selection
 
